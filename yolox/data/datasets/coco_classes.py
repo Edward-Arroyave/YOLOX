@@ -3,6 +3,8 @@
 # Copyright (c) Megvii, Inc. and its affiliates.
 
 COCO_CLASSES = (
+    "cassette",
+    "test"
     "person",
     "bicycle",
     "car",
