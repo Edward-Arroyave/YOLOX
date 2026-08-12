@@ -1,0 +1,290 @@
+openapi: 3.1.0
+info:
+  title: Cassette MLOps API
+  version: 1.0.0-draft
+  description: |
+    Contrato inicial para coordinar preetiquetado, revisión, entrenamiento y
+    promoción. Es un diseño; los endpoints todavía no están implementados.
+servers:
+  - url: https://mlops-api.company.example
+    description: Production placeholder
+tags:
+  - name: Health
+  - name: Jobs
+  - name: Reviews
+  - name: Models
+paths:
+  /health/live:
+    get:
+      tags: [Health]
+      summary: Check process liveness
+      operationId: getLiveness
+      security: []
+      responses:
+        "200":
+          description: Process is alive
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+  /health/ready:
+    get:
+      tags: [Health]
+      summary: Check dependency readiness
+      operationId: getReadiness
+      security: []
+      responses:
+        "200":
+          description: Worker is ready
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/jobs/prelabel:
+    post:
+      tags: [Jobs]
+      summary: Start an asynchronous prelabel job
+      operationId: createPrelabelJob
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PrelabelJobRequest"
+      responses:
+        "202":
+          description: Job accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobAccepted"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/jobs/train:
+    post:
+      tags: [Jobs]
+      summary: Start an asynchronous training job
+      operationId: createTrainingJob
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TrainingJobRequest"
+      responses:
+        "202":
+          description: Job accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobAccepted"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/jobs/{job_id}:
+    get:
+      tags: [Jobs]
+      summary: Get job status
+      operationId: getJob
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema: {type: string}
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Current job state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobStatus"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/batches/{batch_id}/review-complete:
+    post:
+      tags: [Reviews]
+      summary: Submit the final human review result
+      operationId: completeReview
+      parameters:
+        - name: batch_id
+          in: path
+          required: true
+          schema: {type: string}
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewCompleteRequest"
+      responses:
+        "202":
+          description: Review accepted for dataset construction
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobAccepted"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /api/v1/models/{model_version}/promote:
+    post:
+      tags: [Models]
+      summary: Promote an approved candidate model
+      operationId: promoteModel
+      parameters:
+        - name: model_version
+          in: path
+          required: true
+          schema: {type: string}
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PromotionRequest"
+      responses:
+        "200":
+          description: Model promoted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PromotionResult"
+        "409":
+          $ref: "#/components/responses/Conflict"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: {type: string, minLength: 8, maxLength: 128}
+    CorrelationId:
+      name: X-Correlation-ID
+      in: header
+      required: false
+      schema: {type: string, maxLength: 128}
+  responses:
+    Conflict:
+      description: Resource state conflicts with the operation
+      content:
+        application/problem+json:
+          schema: {$ref: "#/components/schemas/ProblemDetails"}
+    NotFound:
+      description: Resource not found
+      content:
+        application/problem+json:
+          schema: {$ref: "#/components/schemas/ProblemDetails"}
+    ValidationError:
+      description: Request or referenced artifact failed validation
+      content:
+        application/problem+json:
+          schema: {$ref: "#/components/schemas/ProblemDetails"}
+    ServiceUnavailable:
+      description: Required dependency is unavailable
+      content:
+        application/problem+json:
+          schema: {$ref: "#/components/schemas/ProblemDetails"}
+  schemas:
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status: {type: string, enum: [ok]}
+    PrelabelJobRequest:
+      type: object
+      additionalProperties: false
+      required: [batch_id, manifest_uri, images_uri, output_uri, model_version]
+      properties:
+        batch_id: {type: string, example: batch-2026-08}
+        manifest_uri: {type: string, format: uri}
+        images_uri: {type: string, format: uri}
+        output_uri: {type: string, format: uri}
+        model_version: {type: string}
+    TrainingJobRequest:
+      type: object
+      additionalProperties: false
+      required: [batch_id, dataset_version, dataset_uri, experiment_file]
+      properties:
+        batch_id: {type: string}
+        dataset_version: {type: string}
+        dataset_uri: {type: string, format: uri}
+        experiment_file: {type: string, example: exps/vet/vet_yolox.py}
+        base_model_version: {type: [string, "null"]}
+    JobAccepted:
+      type: object
+      required: [job_id, status, created_at]
+      properties:
+        job_id: {type: string}
+        status: {type: string, enum: [ACCEPTED]}
+        created_at: {type: string, format: date-time}
+    JobStatus:
+      type: object
+      required: [job_id, job_type, status, updated_at]
+      properties:
+        job_id: {type: string}
+        job_type: {type: string, enum: [PRELABEL, TRAIN]}
+        status: {type: string, enum: [ACCEPTED, RUNNING, SUCCEEDED, FAILED]}
+        updated_at: {type: string, format: date-time}
+        result_uri: {type: [string, "null"], format: uri}
+        error: {anyOf: [{$ref: "#/components/schemas/ProblemDetails"}, {type: "null"}]}
+    ReviewCompleteRequest:
+      type: object
+      additionalProperties: false
+      required: [status, annotations_uri, annotations_sha256, approved, rejected, approved_by, reviewed_at]
+      properties:
+        status: {type: string, enum: [REVIEW_APPROVED]}
+        annotations_uri: {type: string, format: uri}
+        annotations_sha256: {type: string, pattern: "^[a-fA-F0-9]{64}$"}
+        approved: {type: integer, minimum: 0}
+        rejected: {type: integer, minimum: 0}
+        approved_by: {type: string, format: email}
+        reviewed_at: {type: string, format: date-time}
+    PromotionRequest:
+      type: object
+      additionalProperties: false
+      required: [approved_by, approved_at, reason]
+      properties:
+        approved_by: {type: string, format: email}
+        approved_at: {type: string, format: date-time}
+        reason: {type: string, minLength: 1, maxLength: 2000}
+    PromotionResult:
+      type: object
+      required: [model_version, status, promoted_at]
+      properties:
+        model_version: {type: string}
+        status: {type: string, enum: [PROMOTED]}
+        promoted_at: {type: string, format: date-time}
+    ProblemDetails:
+      type: object
+      required: [type, title, status, detail, correlation_id]
+      properties:
+        type: {type: string, format: uri-reference}
+        title: {type: string}
+        status: {type: integer, minimum: 400, maximum: 599}
+        detail: {type: string}
+        correlation_id: {type: string}
+security:
+  - bearerAuth: []
+

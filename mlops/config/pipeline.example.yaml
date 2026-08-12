@@ -1,0 +1,67 @@
+# Copyright (c) 2026 IT Health. All rights reserved.
+# Example without secrets. Copy values to the deployment configuration.
+
+pipeline:
+  timezone: America/Bogota
+  schedule: "0 2 1 * *"
+  minimum_new_images: 100
+  require_label_approval: true
+  require_model_approval: true
+
+api:
+  version_prefix: /api/v1
+  openapi_path: /openapi.json
+  scalar_docs_path: /docs
+  require_authentication: true
+
+azure:
+  storage_account: replace-me
+  container: cassette-images
+  source_prefix: processed
+  # Store the SAS token in n8n credentials or Secret Manager.
+  sas_secret_name: azure-cassette-transfer-sas
+
+gcp:
+  project_id: replace-me
+  region: us-central1
+  bucket: replace-me-cassette-mlops
+  transfer_job_name: transferJobs/replace-me
+  pubsub_topic: cassette-transfer-events
+  vm:
+    zone: us-central1-a
+    instance_name: cassette-training-t4
+    worker_url: http://replace-with-private-worker-endpoint
+    local_root: /mnt/cassette-mlops
+
+dataset:
+  annotations_dir: annotations
+  train_image_dir: train
+  val_image_dir: val
+  test_image_dir: test
+  train_annotation: train.json
+  val_annotation: val.json
+  test_annotation: test.json
+  keep_test_split_fixed: true
+  split_seed: 20260812
+
+training:
+  experiment_file: exps/vet/vet_yolox.py
+  devices: 1
+  batch_size: 8
+  fp16: true
+  cache: disk
+  logger: mlflow
+  warm_start_from_production: true
+
+quality_gates:
+  min_approved_images: 100
+  min_ap50_95_delta: 0.0
+  min_recall_cassette: 0.90
+  min_recall_test: 0.90
+  max_pytorch_onnx_metric_delta: 0.01
+
+retention:
+  landing_days: 90
+  failed_run_days: 30
+  keep_dataset_versions: true
+  keep_production_models: true

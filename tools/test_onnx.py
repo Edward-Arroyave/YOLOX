@@ -1,3 +1,6 @@
+# Copyright (c) 2026 IT Health. All rights reserved.
+# Confidential and proprietary. See LICENSE and NOTICE.
+
 import cv2
 import numpy as np
 import onnxruntime as ort

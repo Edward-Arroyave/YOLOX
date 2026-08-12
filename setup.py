@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # Copyright (c) Megvii, Inc. and its affiliates. All Rights Reserved
+# Modified by IT Health, 2026. Proprietary modifications; see LICENSE and NOTICE.
 
 import re
 import setuptools
@@ -79,12 +80,13 @@ setuptools.setup(
     setup_requires=["wheel"],  # avoid building error when pip is not updated
     long_description=get_long_description(),
     long_description_content_type="text/markdown",
+    license="Proprietary; bundled third-party YOLOX portions are Apache-2.0",
     include_package_data=True,  # include files in MANIFEST.in
     ext_modules=get_ext_modules(),
     cmdclass=get_cmd_class(),
     classifiers=[
         "Programming Language :: Python :: 3", "Operating System :: OS Independent",
-        "License :: OSI Approved :: Apache Software License",
+        "License :: Other/Proprietary License",
     ],
     project_urls={
         "Documentation": "https://yolox.readthedocs.io",

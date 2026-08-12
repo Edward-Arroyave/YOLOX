@@ -19,6 +19,12 @@ Welcome to YOLOX's documentation!
 
 .. toctree::
    :maxdepth: 2
+   :caption: MLOps
+
+   mlops/index
+
+.. toctree::
+   :maxdepth: 2
    :caption: Deployment
 
    demo/trt_py_readme

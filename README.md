@@ -1,3 +1,170 @@
+> **CONFIDENTIAL — IT Health proprietary project.** Distribution, disclosure
+> or use outside authorized IT Health projects is prohibited for IT Health
+> materials. This repository derives from YOLOX; upstream portions remain under
+> Apache License 2.0. See [LICENSE](LICENSE), [NOTICE](NOTICE), and
+> [third-party licenses](THIRD_PARTY_LICENSES/APACHE-2.0.txt).
+
+### Configuración de carpetas del dataset
+
+Los nombres de las carpetas de imágenes no están fijados en el cargador. Cada
+experimento puede configurar `train_image_dir`, `val_image_dir` y
+`test_image_dir`; las rutas son relativas a `data_dir`. También se pueden
+sobrescribir al ejecutar un comando, por ejemplo:
+
+```bash
+python tools/train.py -f exps/vet/vet_yolox.py \
+  train_image_dir images/train val_image_dir images/validation
+```
+
+La documentación del ciclo mensual Azure Blob -> GCP -> revisión ->
+entrenamiento -> promoción comienza en
+[docs/mlops/index.rst](docs/mlops/index.rst).
+
+## Ejecución manual en una VM de GCP
+
+Esta ejecución descarga desde Azure Blob únicamente las imágenes cuyo
+`last_modified` está dentro de un intervalo UTC, filtra los JSON COCO y entrena
+desde el SSD local de la VM. El intervalo es `[inicio, fin)`: incluye el inicio
+y excluye el final.
+
+### 1. Estructura esperada en Azure Blob
+
+```text
+<container>/processed/
+├── annotations/
+│   ├── train.json
+│   └── val.json
+├── train/
+│   └── imágenes de entrenamiento
+└── val/
+    └── imágenes de validación
+```
+
+Los JSON pueden contener el histórico completo. La descarga conserva solo las
+entradas correspondientes a las imágenes seleccionadas por fecha.
+
+### 2. Preparar la VM
+
+Desde la raíz del repositorio:
+
+```bash
+nvidia-smi
+python3.10 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install \
+  torch==1.12.1+cu113 torchvision==0.13.1+cu113 torchaudio==0.12.1 \
+  --extra-index-url https://download.pytorch.org/whl/cu113
+python -m pip install -r requirements.txt
+python -m pip install -r requirements-mlops.txt
+```
+
+La combinación de Python, CUDA y PyTorch debe ser compatible con la imagen de
+la VM. Las versiones antiguas fijadas actualmente en `requirements.txt`
+requieren Python 3.10 y una imagen/driver compatible, o una actualización
+controlada del entorno.
+
+### 3. Configurar identidad de Azure mediante variables de entorno
+
+Crear en Microsoft Entra un service principal de solo lectura y asignarle el
+rol `Storage Blob Data Reader` sobre el contenedor. En la VM se requieren:
+
+```bash
+export AZURE_STORAGE_ACCOUNT_URL="https://<cuenta>.blob.core.windows.net"
+export AZURE_STORAGE_CONTAINER="cassette-images"
+export AZURE_STORAGE_PREFIX="processed"
+
+export AZURE_TENANT_ID="<tenant-id>"
+export AZURE_CLIENT_ID="<application-id>"
+export AZURE_CLIENT_SECRET="<client-secret>"
+```
+
+Para evitar guardar el secreto en el historial del shell, cargarlo desde GCP
+Secret Manager:
+
+```bash
+export AZURE_CLIENT_SECRET="$(gcloud secrets versions access latest \
+  --secret=azure-cassette-client-secret)"
+```
+
+No guardar valores reales en `.env`, Git, scripts, imágenes de VM o logs. El
+archivo [gcp-azure.env.example](mlops/config/gcp-azure.env.example) contiene
+solamente nombres y valores de ejemplo.
+
+### 4. Configurar rango, origen y destino
+
+Ejemplo para obtener julio de 2026:
+
+```bash
+export AZURE_DATA_START="2026-07-01T00:00:00Z"
+export AZURE_DATA_END="2026-08-01T00:00:00Z"
+export AZURE_DATASET_DIR="/mnt/cassette-mlops/datasets/cassette-2026-07"
+
+export AZURE_TRAIN_IMAGE_DIR="train"
+export AZURE_VAL_IMAGE_DIR="val"
+export AZURE_TRAIN_ANNOTATION_BLOB="annotations/train.json"
+export AZURE_VAL_ANNOTATION_BLOB="annotations/val.json"
+```
+
+Primero comprobar qué seleccionaría, sin descargar:
+
+```bash
+python mlops/scripts/download_azure_coco.py --dry-run
+```
+
+Luego descargar y preparar el dataset:
+
+```bash
+python mlops/scripts/download_azure_coco.py
+```
+
+El resultado será:
+
+```text
+/mnt/cassette-mlops/datasets/cassette-2026-07/
+├── annotations/
+│   ├── train.json
+│   └── val.json
+├── train/
+├── val/
+└── manifest.json
+```
+
+`manifest.json` registra rango, blobs, ETags, tamaños y checksums de las
+anotaciones. La fecha usada es la última modificación del blob, no una fecha
+deducida del nombre del archivo.
+
+### 5. Entrenar
+
+```bash
+python tools/train.py \
+  -f exps/vet/vet_yolox.py \
+  -d 1 -b 8 --fp16 --cache disk \
+  data_dir "$AZURE_DATASET_DIR" \
+  train_image_dir train \
+  val_image_dir val \
+  train_ann train.json \
+  val_ann val.json
+```
+
+Para registrar la ejecución en MLflow, añadir `-l mlflow` y configurar las
+variables descritas en [mlflow_integration.md](docs/mlflow_integration.md).
+
+### 6. Validar el mejor checkpoint
+
+```bash
+python tools/eval.py \
+  -f exps/vet/vet_yolox.py \
+  -d 1 -b 8 --fp16 \
+  -c YOLOX_outputs/vet_yolox/best_ckpt.pth \
+  data_dir "$AZURE_DATASET_DIR" \
+  val_image_dir val \
+  val_ann val.json
+```
+
+No se debe promover automáticamente este modelo: primero se comparan sus
+métricas contra producción y se revisan visualmente los falsos negativos.
+
 <div align="center"><img src="assets/logo.png" width="350"></div>
 <img src="assets/demo.png" >
 

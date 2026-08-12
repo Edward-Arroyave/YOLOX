@@ -1,0 +1,4 @@
+# Optional dependencies for Azure dataset ingestion on the GCP worker.
+azure-identity>=1.25,<2
+azure-storage-blob>=12.27,<13
+

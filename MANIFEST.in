@@ -1,2 +1,5 @@
 include requirements.txt
+include LICENSE
+include NOTICE
+include THIRD_PARTY_LICENSES/APACHE-2.0.txt
 recursive-include yolox *.cpp *.h *.cu *.cuh *.cc

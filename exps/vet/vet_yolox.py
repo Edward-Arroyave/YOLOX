@@ -1,3 +1,6 @@
+# Copyright (c) 2026 IT Health. All rights reserved.
+# Confidential and proprietary. See LICENSE and NOTICE.
+
 import os
 from yolox.exp import Exp as MyExp
 
@@ -118,9 +121,14 @@ class Exp(MyExp):
         # DATASET
         # ======================
         self.data_dir = "datasets/COCO"
-
         self.train_ann = "train.json"
         self.val_ann = "val.json"
+
+        # Carpetas de imágenes relativas a data_dir.
+        # También pueden cambiarse desde la línea de comandos con opts.
+        self.train_image_dir = "train2017"
+        self.val_image_dir = "val2017"
+        self.test_image_dir = "test2017"
 
         self.data_num_workers = 2
 

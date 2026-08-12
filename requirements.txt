@@ -1,3 +1,4 @@
+# Modified by IT Health, 2026. Proprietary modifications; see LICENSE and NOTICE.
 # =========================
 # CORE PYTORCH STACK (CRÍTICO)
 # =========================

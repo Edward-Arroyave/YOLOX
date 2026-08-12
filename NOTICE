@@ -1,0 +1,24 @@
+IT Health proprietary YOLOX-based software
+Copyright (c) 2026 IT Health. All rights reserved.
+
+CONFIDENTIALITY NOTICE
+
+Materials authored by or for IT Health are proprietary and confidential and
+may not be distributed, disclosed or used outside authorized IT Health
+projects. See LICENSE for the terms applying to those materials.
+
+THIRD-PARTY ATTRIBUTION
+
+This product includes software developed by Megvii, Inc. and its affiliates as
+part of the YOLOX project:
+
+    https://github.com/Megvii-BaseDetection/YOLOX
+
+The original YOLOX portions and modifications derived from those portions
+remain subject to the Apache License, Version 2.0. A copy is provided in
+THIRD_PARTY_LICENSES/APACHE-2.0.txt. Files derived from YOLOX retain their
+applicable original copyright and attribution notices.
+
+Other dependencies, datasets and pretrained weights may be governed by their
+own license terms and must be reviewed before redistribution or commercial use.
+

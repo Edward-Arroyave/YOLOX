@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding:utf-8 -*-
 # Copyright (c) Megvii, Inc. and its affiliates.
+# Modified by IT Health, 2026. Proprietary modifications; see LICENSE and NOTICE.
 
 COCO_CLASSES = (
     "cassette",
