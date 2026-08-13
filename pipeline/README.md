@@ -115,7 +115,13 @@ Todos los perfiles deben conservar estos nombres; no son variables de `.env`:
 ```
 
 La configuración compartida usa `PIPELINE_BLOB_BASE_PREFIX`,
-`PIPELINE_WEIGHTS_PREFIX` y `PIPELINE_EXP_FILE_TEMPLATE`. El lote se recibe con
+`PIPELINE_WEIGHTS_PREFIX` y
+`PIPELINE_EXP_FILE=exps/cassette/cassette_yolox.py`. Tanto `--prefix lis` como
+`--prefix vet` cargan ese mismo experimento. El lote se recibe con
 `--dataset-folder` o se calcula con el mes actual; su ruta local se deriva de
 `AZURE_INGEST_DESTINATION`. La descripción de las variables está en
 `.env.example` y en el README principal.
+
+El batch del entrenamiento no es una variable de entorno. Se define una sola
+vez mediante `TRAIN_BATCH_SIZE` en `exps/cassette/settings.py` y actualmente
+vale `8`.

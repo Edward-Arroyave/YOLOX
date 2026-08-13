@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from exps.cassette.settings import TRAIN_BATCH_SIZE
 from pipeline.run_training_pipeline import (
     REPOSITORY_ROOT,
     add_repository_to_pythonpath,
@@ -19,6 +20,9 @@ from pipeline.run_training_pipeline import (
 
 
 class TestTrainingPipeline(unittest.TestCase):
+    def test_shared_batch_size(self):
+        self.assertEqual(TRAIN_BATCH_SIZE, 8)
+
     def test_env_bool(self):
         for value in ("true", "1", "YES", "on"):
             with patch.dict(os.environ, {"FLAG": value}):
@@ -43,11 +47,11 @@ class TestTrainingPipeline(unittest.TestCase):
         with self.assertRaises(ValueError):
             normalize_model_prefix("../vet")
 
-    def test_experiment_path_template(self):
-        path = experiment_path("exps/{prefix}/{project}.py", "vet", "vet_yolox")
-        self.assertTrue(path.as_posix().endswith("exps/vet/vet_yolox.py"))
-        with self.assertRaises(ValueError):
-            experiment_path("exps/{unknown}.py", "vet", "vet_yolox")
+    def test_shared_experiment_path(self):
+        shared = experiment_path("exps/cassette/cassette_yolox.py")
+        self.assertTrue(
+            shared.as_posix().endswith("exps/cassette/cassette_yolox.py")
+        )
 
     def test_current_dataset_folder(self):
         self.assertRegex(current_dataset_folder("America/Bogota"), r"^\d{1,2}-\d{4}$")

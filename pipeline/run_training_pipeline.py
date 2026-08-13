@@ -21,6 +21,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
+from exps.cassette.settings import TRAIN_BATCH_SIZE  # noqa: E402
 from tools.ingest_blob_storage import (  # noqa: E402
     combine_prefix,
     create_container_client,
@@ -72,13 +73,7 @@ def normalize_model_prefix(prefix: str) -> str:
     return normalized
 
 
-def experiment_path(template: str, prefix: str, project: str) -> Path:
-    try:
-        configured = template.format(prefix=prefix, project=project)
-    except (KeyError, ValueError) as exc:
-        raise ValueError(
-            "PIPELINE_EXP_FILE_TEMPLATE solo admite {prefix} y {project}"
-        ) from exc
+def experiment_path(configured: str) -> Path:
     return resolve_repo_path(configured)
 
 
@@ -258,7 +253,7 @@ def main() -> int:
         blob_base_prefix = required_env("PIPELINE_BLOB_BASE_PREFIX")
         weights_prefix = normalize_weights_prefix(required_env("PIPELINE_WEIGHTS_PREFIX"))
         exp_file = experiment_path(
-            required_env("PIPELINE_EXP_FILE_TEMPLATE"), prefix, project
+            os.getenv("PIPELINE_EXP_FILE", "exps/cassette/cassette_yolox.py")
         )
         data_dir = resolve_repo_path(
             os.getenv("AZURE_INGEST_DESTINATION", "datasets")
@@ -270,11 +265,11 @@ def main() -> int:
             os.getenv("PIPELINE_ARTIFACTS_DIR", ".pipeline_artifacts")
         ) / project
         devices = int(os.getenv("PIPELINE_DEVICES", "1"))
-        batch_size = int(os.getenv("PIPELINE_BATCH_SIZE", "8"))
+        batch_size = TRAIN_BATCH_SIZE
         fp16 = env_bool("PIPELINE_FP16", True)
         no_onnx_simplify = env_bool("PIPELINE_ONNX_NO_SIMPLIFY", False)
         if devices < 1 or batch_size < 1:
-            raise ValueError("PIPELINE_DEVICES y PIPELINE_BATCH_SIZE deben ser mayores que cero")
+            raise ValueError("PIPELINE_DEVICES y TRAIN_BATCH_SIZE deben ser mayores que cero")
         if not exp_file.is_file():
             raise ValueError(f"No existe el experimento configurado: {exp_file}")
         if not args.dry_run:

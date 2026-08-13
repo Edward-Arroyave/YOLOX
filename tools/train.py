@@ -30,7 +30,13 @@ def make_parser():
         type=str,
         help="url used to set up distributed training",
     )
-    parser.add_argument("-b", "--batch-size", type=int, default=64, help="batch size")
+    parser.add_argument(
+        "-b",
+        "--batch-size",
+        type=int,
+        default=None,
+        help="batch size; by default uses exp.batch_size or 64",
+    )
     parser.add_argument(
         "-d", "--devices", default=None, type=int, help="device for training"
     )
@@ -124,6 +130,9 @@ if __name__ == "__main__":
     exp = get_exp(args.exp_file, args.name)
     exp.merge(args.opts)
     check_exp_value(exp)
+
+    if args.batch_size is None:
+        args.batch_size = getattr(exp, "batch_size", 64)
 
     if not args.experiment_name:
         args.experiment_name = exp.exp_name

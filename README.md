@@ -178,7 +178,7 @@ Los dos prefijos utilizan el mismo bloque de variables:
 ```dotenv
 PIPELINE_BLOB_BASE_PREFIX=training_yolox
 PIPELINE_WEIGHTS_PREFIX=weights
-PIPELINE_EXP_FILE_TEMPLATE=exps/{prefix}/{project}.py
+PIPELINE_EXP_FILE=exps/cassette/cassette_yolox.py
 ```
 
 La estructura interna es fija para todos los proyectos:
@@ -206,7 +206,6 @@ Validación también se utiliza como conjunto de prueba mientras no exista un
 | `PIPELINE_OUTPUT_DIR` | Guarda checkpoints, logs y TensorBoard del entrenamiento. |
 | `PIPELINE_ARTIFACTS_DIR` | Guarda temporalmente el último modelo base descargado. |
 | `PIPELINE_DEVICES` | Cantidad de GPU utilizadas. |
-| `PIPELINE_BATCH_SIZE` | Cantidad total de imágenes por iteración. |
 | `PIPELINE_FP16` | Activa precisión mixta durante el entrenamiento. |
 | `PIPELINE_ONNX_DYNAMIC` | Permite batch dinámico en el modelo ONNX. |
 | `PIPELINE_ONNX_NO_SIMPLIFY` | Omite la simplificación del archivo ONNX. |
@@ -214,18 +213,22 @@ Validación también se utiliza como conjunto de prueba mientras no exista un
 | `PIPELINE_TIMEZONE` | Zona horaria para calcular automáticamente el lote mensual. |
 | `PIPELINE_BLOB_BASE_PREFIX` | Ruta remota común anterior al lote seleccionado. |
 | `PIPELINE_WEIGHTS_PREFIX` | Ruta remota común de modelos versionados. |
-| `PIPELINE_EXP_FILE_TEMPLATE` | Forma la ruta del experimento usando `{prefix}` y `{project}`. |
+| `PIPELINE_EXP_FILE` | Experimento único de cassettes usado por `vet` y `lis`. |
 
-La configuración completa y el bloque equivalente para LIS están en
-`.env.example`. La guía específica del orquestador está en
-`pipeline/README.md`.
+La configuración completa está en `.env.example`. La guía específica del
+orquestador está en `pipeline/README.md`.
 
 ## Herramientas individuales y configuración avanzada
 
 ### Configuración del dataset personalizado
 
-El experimento `exps/vet/vet_yolox.py` permite configurar únicamente la raíz
-del dataset mediante `YOLOX_DATA_DIR`. Los nombres internos permanecen fijos.
+El experimento compartido `exps/cassette/cassette_yolox.py` se usa para LIS y
+VET. Permite configurar únicamente la raíz del dataset mediante
+`YOLOX_DATA_DIR`; los nombres internos permanecen fijos.
+
+El batch también pertenece a la configuración común. Se define como
+`TRAIN_BATCH_SIZE = 8` en `exps/cassette/settings.py` y no se configura mediante
+`.env`.
 
 Crear el archivo `.env` a partir del ejemplo incluido:
 
@@ -244,7 +247,7 @@ El experimento carga `.env` automáticamente al iniciar:
 ```bash
 python -m pip install -r requirements.txt
 
-python tools/train.py -f exps/vet/vet_yolox.py -d 1 -b 8 --fp16
+python tools/train.py -f exps/cassette/cassette_yolox.py -d 1 -b 8 --fp16
 ```
 
 Con esa configuración se utilizan estas rutas:
@@ -304,7 +307,7 @@ YOLOX_DATA_DIR=datasets/8-2026
 Después de la ingesta se inicia el entrenamiento normalmente:
 
 ```bash
-python tools/train.py -f exps/vet/vet_yolox.py -d 1 -b 8 --fp16
+python tools/train.py -f exps/cassette/cassette_yolox.py -d 1 -b 8 --fp16
 ```
 
 Opciones útiles del comando:
@@ -366,7 +369,7 @@ Después del entrenamiento, ejecutar primero una simulación con el mejor peso:
 ```bash
 python tools/publish_weights.py \
   --ckpt YOLOX_outputs/vet_yolox/best_ckpt.pth \
-  --exp-file exps/vet/vet_yolox.py \
+  --exp-file exps/cassette/cassette_yolox.py \
   --project vet_yolox \
   --dry-run
 ```
@@ -376,7 +379,7 @@ Para exportar a ONNX y subir los dos formatos:
 ```bash
 python tools/publish_weights.py \
   --ckpt YOLOX_outputs/vet_yolox/best_ckpt.pth \
-  --exp-file exps/vet/vet_yolox.py \
+  --exp-file exps/cassette/cassette_yolox.py \
   --project vet_yolox
 ```
 

@@ -1,9 +1,6 @@
-"""Experimento LIS basado en la configuración común de entrenamiento."""
+"""Alias compatible del experimento compartido para cassettes."""
 
-from exps.vet.vet_yolox import Exp as VetExp
+from exps.cassette.cassette_yolox import Exp
 
 
-class Exp(VetExp):
-    def __init__(self):
-        super().__init__()
-        self.exp_name = "lis_yolox"
+__all__ = ["Exp"]
