@@ -1,6 +1,124 @@
 <div align="center"><img src="assets/logo.png" width="350"></div>
 <img src="assets/demo.png" >
 
+## Configuración del dataset personalizado
+
+El experimento `exps/vet/vet_yolox.py` permite configurar las carpetas mediante
+variables de entorno. Ya no es obligatorio usar los nombres `train2017`,
+`val2017`, `test2017` o `annotations`.
+
+Crear el archivo `.env` a partir del ejemplo incluido:
+
+```bash
+cp .env.example .env
+```
+
+Editar `.env` con las rutas requeridas:
+
+```dotenv
+YOLOX_DATA_DIR=/mnt/datasets/cassettes
+
+YOLOX_TRAIN_IMAGES=images/train
+YOLOX_VAL_IMAGES=images/val
+YOLOX_TEST_IMAGES=images/test
+
+YOLOX_ANNOTATIONS_DIR=labels/coco
+YOLOX_TRAIN_ANN=train.json
+YOLOX_VAL_ANN=val.json
+YOLOX_TEST_ANN=test.json
+```
+
+El experimento carga `.env` automáticamente al iniciar:
+
+```bash
+python -m pip install -r requirements.txt
+
+python tools/train.py -f exps/vet/vet_yolox.py -d 1 -b 8 --fp16
+```
+
+Con esa configuración se utilizan estas rutas:
+
+```text
+/mnt/datasets/cassettes/images/train/
+/mnt/datasets/cassettes/images/val/
+/mnt/datasets/cassettes/images/test/
+/mnt/datasets/cassettes/labels/coco/train.json
+/mnt/datasets/cassettes/labels/coco/val.json
+/mnt/datasets/cassettes/labels/coco/test.json
+```
+
+Si no se define ninguna variable, se conserva la estructura anterior bajo
+`datasets/COCO`. Las variables definidas directamente en el sistema o en la VM
+tienen prioridad sobre los valores del archivo `.env`.
+
+### Ingesta de una carpeta desde Azure Blob Storage
+
+Agregar al archivo `.env` la cadena de conexión, el contenedor y el destino:
+
+```dotenv
+AZURE_STORAGE_CONNECTION_STRING=DefaultEndpointsProtocol=https;AccountName=<cuenta>;AccountKey=<clave>;EndpointSuffix=core.windows.net
+AZURE_STORAGE_CONTAINER=datasets
+AZURE_BLOB_BASE_PREFIX=incoming
+AZURE_INGEST_DESTINATION=datasets
+```
+
+`AZURE_BLOB_BASE_PREFIX` es opcional. Para descargar la carpeta virtual
+`incoming/COCO/` del contenedor:
+
+```bash
+python tools/ingest_blob_storage.py --folder COCO --dry-run
+python tools/ingest_blob_storage.py --folder COCO
+```
+
+El primer comando solamente muestra los archivos. El segundo los descarga y
+conserva la estructura:
+
+```text
+Azure: <contenedor>/incoming/COCO/
+                         ├── annotations/train.json
+                         ├── annotations/val.json
+                         ├── train2017/...
+                         └── val2017/...
+
+Local: <repositorio>/datasets/COCO/
+                         ├── annotations/train.json
+                         ├── annotations/val.json
+                         ├── train2017/...
+                         └── val2017/...
+```
+
+En este caso la configuración de YOLOX puede ser:
+
+```dotenv
+YOLOX_DATA_DIR=datasets/COCO
+YOLOX_TRAIN_IMAGES=train2017
+YOLOX_VAL_IMAGES=val2017
+YOLOX_TEST_IMAGES=test2017
+YOLOX_ANNOTATIONS_DIR=annotations
+YOLOX_TRAIN_ANN=train.json
+YOLOX_VAL_ANN=val.json
+YOLOX_TEST_ANN=test.json
+```
+
+Después de la ingesta se inicia el entrenamiento normalmente:
+
+```bash
+python tools/train.py -f exps/vet/vet_yolox.py -d 1 -b 8 --fp16
+```
+
+Opciones útiles del comando:
+
+```text
+--env-file RUTA       usa otro archivo .env
+--destination RUTA    cambia la raíz local de datasets
+--workers 8           número de descargas simultáneas
+--overwrite           vuelve a descargar archivos existentes
+--dry-run             lista sin descargar
+```
+
+La cadena de conexión no se imprime. El archivo `.env` está excluido de Git y
+no debe copiarse a imágenes Docker, logs o documentación.
+
 ## Introduction
 YOLOX is an anchor-free version of YOLO, with a simpler design but better performance! It aims to bridge the gap between research and industrial communities.
 For more details, please refer to our [report on Arxiv](https://arxiv.org/abs/2107.08430).

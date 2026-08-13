@@ -45,6 +45,7 @@ class COCODataset(CacheDataset):
         preproc=None,
         cache=False,
         cache_type="ram",
+        annotations_dir="annotations",
     ):
         """
         COCO dataset initialization. Annotation data are read into memory by COCO API.
@@ -52,6 +53,7 @@ class COCODataset(CacheDataset):
             data_dir (str): dataset root directory
             json_file (str): COCO json file name
             name (str): COCO data name (e.g. 'train2017' or 'val2017')
+            annotations_dir (str): annotations directory, relative to data_dir
             img_size (int): target image size after pre-processing
             preproc: data augmentation strategy
         """
@@ -59,8 +61,9 @@ class COCODataset(CacheDataset):
             data_dir = os.path.join(get_yolox_datadir(), "COCO")
         self.data_dir = data_dir
         self.json_file = json_file
+        self.annotations_dir = annotations_dir
 
-        self.coco = COCO(os.path.join(self.data_dir, "annotations", self.json_file))
+        self.coco = COCO(os.path.join(self.data_dir, self.annotations_dir, self.json_file))
         remove_useless_info(self.coco)
         self.ids = self.coco.getImgIds()
         self.num_imgs = len(self.ids)

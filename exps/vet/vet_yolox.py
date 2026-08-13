@@ -1,5 +1,15 @@
 import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
 from yolox.exp import Exp as MyExp
+
+
+# Carga .env desde la raíz del repositorio. Las variables ya definidas en el
+# sistema tienen prioridad porque override=False.
+ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+load_dotenv(dotenv_path=ENV_FILE, override=False)
 
 
 class Exp(MyExp):
@@ -117,10 +127,17 @@ class Exp(MyExp):
         # ======================
         # DATASET
         # ======================
-        self.data_dir = "datasets/COCO"
+        # Estas rutas se pueden configurar mediante variables de entorno.
+        # Los valores por defecto conservan la estructura anterior.
+        self.data_dir = os.getenv("YOLOX_DATA_DIR", "datasets/COCO")
+        self.train_image_dir = os.getenv("YOLOX_TRAIN_IMAGES", "train2017")
+        self.val_image_dir = os.getenv("YOLOX_VAL_IMAGES", "val2017")
+        self.test_image_dir = os.getenv("YOLOX_TEST_IMAGES", "test2017")
+        self.annotations_dir = os.getenv("YOLOX_ANNOTATIONS_DIR", "annotations")
 
-        self.train_ann = "train.json"
-        self.val_ann = "val.json"
+        self.train_ann = os.getenv("YOLOX_TRAIN_ANN", "train.json")
+        self.val_ann = os.getenv("YOLOX_VAL_ANN", "val.json")
+        self.test_ann = os.getenv("YOLOX_TEST_ANN", "test.json")
 
         self.data_num_workers = 2
 
