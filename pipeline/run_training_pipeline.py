@@ -11,7 +11,9 @@ import shutil
 import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -27,12 +29,12 @@ from tools.publish_weights import (  # noqa: E402
     VERSION_PATTERN,
     format_version,
     next_patch_version,
-    normalize_prefix,
+    normalize_prefix as normalize_weights_prefix,
     version_number,
 )
 
 
-PROJECT_PATTERN = re.compile(r"^[a-z][a-z0-9_-]*$")
+PREFIX_PATTERN = re.compile(r"^[a-z][a-z0-9_-]*$")
 
 
 def env_bool(name: str, default: bool = False) -> bool:
@@ -54,15 +56,29 @@ def required_env(name: str) -> str:
     return value
 
 
-def project_key(project: str) -> str:
-    normalized = project.strip().lower()
-    if not PROJECT_PATTERN.fullmatch(normalized):
-        raise ValueError("--project solo admite letras minúsculas, números, _ y -")
-    return normalized.upper().replace("-", "_")
+def normalize_model_prefix(prefix: str) -> str:
+    normalized = prefix.strip().lower()
+    if not PREFIX_PATTERN.fullmatch(normalized):
+        raise ValueError("--prefix solo admite letras minúsculas, números, _ y -")
+    return normalized
 
 
-def project_env(key: str, suffix: str) -> str:
-    return required_env(f"{key}_{suffix}")
+def experiment_path(template: str, prefix: str, project: str) -> Path:
+    try:
+        configured = template.format(prefix=prefix, project=project)
+    except (KeyError, ValueError) as exc:
+        raise ValueError(
+            "PIPELINE_EXP_FILE_TEMPLATE solo admite {prefix} y {project}"
+        ) from exc
+    return resolve_repo_path(configured)
+
+
+def current_dataset_folder(timezone_name: str) -> str:
+    try:
+        current = datetime.now(ZoneInfo(timezone_name))
+    except Exception as exc:
+        raise ValueError(f"PIPELINE_TIMEZONE no es válida: {timezone_name}") from exc
+    return f"{current.month}-{current.year}"
 
 
 def resolve_repo_path(value: str) -> Path:
@@ -93,8 +109,11 @@ def run_stage(
         )
 
 
-def find_latest_version(blob_names: list[str], weights_prefix: str) -> str | None:
+def find_latest_version(
+    blob_names: list[str], weights_prefix: str, project: str | None = None
+) -> str | None:
     base = weights_prefix.rstrip("/") + "/"
+    names = set(blob_names)
     versions = []
     for name in blob_names:
         if not name.startswith(base) or not name.endswith("/best_ckpt.pth"):
@@ -102,7 +121,10 @@ def find_latest_version(blob_names: list[str], weights_prefix: str) -> str | Non
         relative = name[len(base):]
         version = relative.split("/", 1)[0]
         match = VERSION_PATTERN.fullmatch(version)
-        if match:
+        project_onnx = combine_prefix(
+            combine_prefix(weights_prefix, version), f"{project}.onnx"
+        ) if project else None
+        if match and (project_onnx is None or project_onnx in names):
             versions.append(tuple(int(part) for part in match.groups()))
     return format_version(max(versions)) if versions else None
 
@@ -144,9 +166,9 @@ def clean_local_weights(output_project: Path, artifacts_project: Path) -> int:
 def make_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Ejecuta el pipeline completo por proyecto.")
     parser.add_argument(
-        "--project",
+        "--prefix",
         required=True,
-        help="Perfil del proyecto, por ejemplo vet_yolox o lis_yolox.",
+        help="Prefijo del modelo, por ejemplo vet o lis.",
     )
     parser.add_argument(
         "--version",
@@ -154,6 +176,14 @@ def make_parser() -> argparse.ArgumentParser:
         help=(
             "Versión SemVer opcional. Por defecto aumenta automáticamente "
             "el parche de la última versión."
+        ),
+    )
+    parser.add_argument(
+        "--dataset-folder",
+        default=None,
+        help=(
+            "Lote remoto, por ejemplo 8-2026. Si se omite, usa el mes actual "
+            "en PIPELINE_TIMEZONE."
         ),
     )
     parser.add_argument("--env-file", default=None, help="Archivo .env alternativo.")
@@ -171,7 +201,7 @@ def make_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--allow-no-base",
         action="store_true",
-        help="Permite iniciar 1.0.0 sin un modelo previamente publicado.",
+        help="Permite publicar el primer modelo de un prefijo sin base previa.",
     )
     parser.add_argument(
         "--dry-run",
@@ -192,12 +222,24 @@ def main() -> int:
         if not args.dry_run and not args.yes_clean and not args.skip_clean:
             raise ValueError("Use --yes-clean para limpiar o --skip-clean para conservar datos")
 
-        project = args.project.strip().lower()
-        key = project_key(project)
-        dataset_folder = project_env(key, "DATASET_FOLDER")
-        blob_base_prefix = project_env(key, "BLOB_BASE_PREFIX")
-        weights_prefix = normalize_prefix(project_env(key, "WEIGHTS_PREFIX"))
-        exp_file = resolve_repo_path(project_env(key, "EXP_FILE"))
+        prefix = normalize_model_prefix(args.prefix)
+        project = f"{prefix}_yolox"
+        timezone_name = os.getenv("PIPELINE_TIMEZONE", "America/Bogota").strip()
+        dataset_folder = (
+            args.dataset_folder.strip()
+            if args.dataset_folder
+            else current_dataset_folder(timezone_name)
+        )
+        if not dataset_folder or "/" in dataset_folder or "\\" in dataset_folder:
+            raise ValueError("--dataset-folder debe ser el nombre de un lote, no una ruta")
+        blob_base_prefix = required_env("PIPELINE_BLOB_BASE_PREFIX")
+        weights_prefix = normalize_weights_prefix(required_env("PIPELINE_WEIGHTS_PREFIX"))
+        exp_file = experiment_path(
+            required_env("PIPELINE_EXP_FILE_TEMPLATE"), prefix, project
+        )
+        data_dir = resolve_repo_path(
+            os.getenv("AZURE_INGEST_DESTINATION", "datasets")
+        ) / dataset_folder
         output_dir = resolve_repo_path(os.getenv("PIPELINE_OUTPUT_DIR", "YOLOX_outputs"))
         output_project = output_dir / project
         checkpoint = output_project / "best_ckpt.pth"
@@ -218,8 +260,9 @@ def main() -> int:
         existing = [
             blob.name for blob in client.list_blobs(name_starts_with=weights_prefix + "/")
         ]
-        latest_version = find_latest_version(existing, weights_prefix)
-        expected_target = next_patch_version(latest_version)
+        latest_version = find_latest_version(existing, weights_prefix, project)
+        latest_global_version = find_latest_version(existing, weights_prefix)
+        expected_target = next_patch_version(latest_global_version)
         target_version = (
             format_version(version_number(args.version))
             if args.version
@@ -233,25 +276,15 @@ def main() -> int:
         if latest_version is None and not args.allow_no_base:
             raise ValueError(
                 f"No hay un modelo base en {container}/{weights_prefix}/; "
-                "use --allow-no-base solo para publicar 1.0.0"
+                f"use --allow-no-base solo para el primer modelo de {prefix}"
             )
 
         base_checkpoint = None
         if latest_version:
             base_checkpoint = artifacts_project / latest_version / "best_ckpt.pth"
 
-        profile_overrides = {
-            "YOLOX_DATA_DIR": project_env(key, "DATA_DIR"),
-            "YOLOX_TRAIN_IMAGES": project_env(key, "TRAIN_IMAGES"),
-            "YOLOX_VAL_IMAGES": project_env(key, "VAL_IMAGES"),
-            "YOLOX_TEST_IMAGES": project_env(key, "TEST_IMAGES"),
-            "YOLOX_ANNOTATIONS_DIR": project_env(key, "ANNOTATIONS_DIR"),
-            "YOLOX_TRAIN_ANN": project_env(key, "TRAIN_ANN"),
-            "YOLOX_VAL_ANN": project_env(key, "VAL_ANN"),
-            "YOLOX_TEST_ANN": project_env(key, "TEST_ANN"),
-        }
         child_environment = os.environ.copy()
-        child_environment.update(profile_overrides)
+        child_environment["YOLOX_DATA_DIR"] = str(data_dir)
         env_args = ["--env-file", str(loaded)] if loaded else []
 
         clean_command = [sys.executable, "tools/clean_datasets.py", *env_args, "--yes"]
@@ -316,10 +349,13 @@ def main() -> int:
             publish_command.append("--no-onnxsim")
 
         print("Pipeline configurado:")
+        print(f"  Prefijo: {prefix}")
         print(f"  Proyecto: {project}")
         print(f"  Modelo base: {latest_version or 'ninguno'}")
+        print(f"  Última versión global: {latest_global_version or 'ninguna'}")
         print(f"  Nueva versión: {target_version}")
         print(f"  Dataset: {container}/{blob_base_prefix}/{dataset_folder}/")
+        print(f"  Dataset local: {data_dir}")
         print(f"  Publicación: {container}/{weights_prefix}/{target_version}/")
 
         print("\n=== 1/6 Obtener último modelo base ===", flush=True)

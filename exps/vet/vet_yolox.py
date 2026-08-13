@@ -127,17 +127,16 @@ class Exp(MyExp):
         # ======================
         # DATASET
         # ======================
-        # Estas rutas se pueden configurar mediante variables de entorno.
-        # Los valores por defecto conservan la estructura anterior.
+        # La raíz cambia por proyecto; la estructura interna es estándar.
         self.data_dir = os.getenv("YOLOX_DATA_DIR", "datasets/COCO")
-        self.train_image_dir = os.getenv("YOLOX_TRAIN_IMAGES", "train2017")
-        self.val_image_dir = os.getenv("YOLOX_VAL_IMAGES", "val2017")
-        self.test_image_dir = os.getenv("YOLOX_TEST_IMAGES", "test2017")
-        self.annotations_dir = os.getenv("YOLOX_ANNOTATIONS_DIR", "annotations")
+        self.train_image_dir = "training/images"
+        self.val_image_dir = "val/images"
+        self.test_image_dir = "val/images"
+        self.annotations_dir = "."
 
-        self.train_ann = os.getenv("YOLOX_TRAIN_ANN", "train.json")
-        self.val_ann = os.getenv("YOLOX_VAL_ANN", "val.json")
-        self.test_ann = os.getenv("YOLOX_TEST_ANN", "test.json")
+        self.train_ann = "training/annotations/annotations.json"
+        self.val_ann = "val/annotations/annotations.json"
+        self.test_ann = "val/annotations/annotations.json"
 
         self.data_num_workers = 2
 

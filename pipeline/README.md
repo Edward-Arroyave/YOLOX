@@ -1,12 +1,12 @@
 # Pipeline de entrenamiento YOLOX
 
-El pipeline se ejecuta por proyecto (`vet_yolox`, `lis_yolox` u otro perfil
-configurado) y mantiene separados sus datasets y modelos.
+El pipeline recibe un prefijo (`vet` o `lis`) y deriva el nombre del proyecto y
+del ONNX: `vet_yolox` o `lis_yolox`. Ambos usan la misma configuración `.env`.
 
 ## Flujo
 
-1. Consulta `weights/<proyecto>/` en Azure.
-2. Descarga el `best_ckpt.pth` de la última versión del proyecto.
+1. Consulta las versiones bajo `weights/` en Azure.
+2. Descarga el último `best_ckpt.pth` cuya versión contenga el ONNX del prefijo.
 3. Limpia el dataset local y descarga el lote configurado.
 4. Entrena usando el último checkpoint como base de *fine-tuning*.
 5. Exporta el nuevo mejor checkpoint a ONNX.
@@ -22,7 +22,7 @@ Simulación para veterinaria:
 
 ```bash
 python pipeline/run_training_pipeline.py \
-  --project vet_yolox \
+  --prefix vet \
   --dry-run
 ```
 
@@ -30,21 +30,44 @@ Ejecución completa:
 
 ```bash
 python pipeline/run_training_pipeline.py \
-  --project vet_yolox \
+  --prefix vet \
   --yes-clean
+```
+
+Por defecto se usa el mes actual en `PIPELINE_TIMEZONE` y se busca una carpeta
+como `8-2026`. Para seleccionar otro lote:
+
+```bash
+python pipeline/run_training_pipeline.py \
+  --prefix vet \
+  --dataset-folder 7-2026 \
+  --yes-clean
+```
+
+Un rango se procesa en orden, generando una versión por mes:
+
+```bash
+set -e
+for lote in 6-2026 7-2026 8-2026; do
+  python pipeline/run_training_pipeline.py \
+    --prefix vet \
+    --dataset-folder "$lote" \
+    --yes-clean
+done
 ```
 
 Para LIS:
 
 ```bash
 python pipeline/run_training_pipeline.py \
-  --project lis_yolox \
+  --prefix lis \
   --yes-clean \
   --allow-no-base
 ```
 
-`--allow-no-base` solo se utiliza para crear la primera versión `1.0.0`.
-En ejecuciones posteriores, el pipeline exige y descarga la última versión.
+`--allow-no-base` solo se utiliza para publicar el primer modelo de un prefijo.
+En ejecuciones posteriores, el pipeline exige y descarga la última versión que
+contenga su ONNX correspondiente.
 
 La versión se calcula automáticamente. Si la última es `1.0.0`, el pipeline
 publica `1.0.1`. `--version` es opcional y solo permite confirmar manualmente el
@@ -73,3 +96,20 @@ weights/1.0.1/
 
 El README publicado registra proyecto, versión, modelo base, dataset,
 experimento, GPU, batch, FP16, fecha, época, AP, tamaños y hashes SHA-256.
+
+## Estructura fija del dataset
+
+Todos los perfiles deben conservar estos nombres; no son variables de `.env`:
+
+```text
+<DATA_DIR>/training/images/
+<DATA_DIR>/training/annotations/annotations.json
+<DATA_DIR>/val/images/
+<DATA_DIR>/val/annotations/annotations.json
+```
+
+La configuración compartida usa `PIPELINE_BLOB_BASE_PREFIX`,
+`PIPELINE_WEIGHTS_PREFIX` y `PIPELINE_EXP_FILE_TEMPLATE`. El lote se recibe con
+`--dataset-folder` o se calcula con el mes actual; su ruta local se deriva de
+`AZURE_INGEST_DESTINATION`. La descripción de las variables está en
+`.env.example` y en el README principal.

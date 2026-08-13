@@ -6,9 +6,11 @@ from unittest.mock import patch
 
 from pipeline.run_training_pipeline import (
     clean_local_weights,
+    current_dataset_folder,
+    experiment_path,
     env_bool,
     find_latest_version,
-    project_key,
+    normalize_model_prefix,
     required_env,
 )
 
@@ -32,19 +34,38 @@ class TestTrainingPipeline(unittest.TestCase):
             with self.assertRaises(ValueError):
                 required_env("REQUIRED_TEST")
 
-    def test_project_key(self):
-        self.assertEqual(project_key("vet_yolox"), "VET_YOLOX")
-        self.assertEqual(project_key("lis-yolox"), "LIS_YOLOX")
+    def test_model_prefix(self):
+        self.assertEqual(normalize_model_prefix("VET"), "vet")
+        self.assertEqual(normalize_model_prefix("lis"), "lis")
         with self.assertRaises(ValueError):
-            project_key("../vet")
+            normalize_model_prefix("../vet")
+
+    def test_experiment_path_template(self):
+        path = experiment_path("exps/{prefix}/{project}.py", "vet", "vet_yolox")
+        self.assertTrue(path.as_posix().endswith("exps/vet/vet_yolox.py"))
+        with self.assertRaises(ValueError):
+            experiment_path("exps/{unknown}.py", "vet", "vet_yolox")
+
+    def test_current_dataset_folder(self):
+        self.assertRegex(current_dataset_folder("America/Bogota"), r"^\d{1,2}-\d{4}$")
+        with self.assertRaises(ValueError):
+            current_dataset_folder("Invalid/Timezone")
 
     def test_find_latest_version(self):
         blobs = [
             "weights/1.0.0/best_ckpt.pth",
-            "weights/1.0.2/vet_yolox.onnx",
+            "weights/1.0.0/vet_yolox.onnx",
             "weights/1.0.1/best_ckpt.pth",
+            "weights/1.0.1/lis_yolox.onnx",
         ]
         self.assertEqual(find_latest_version(blobs, "weights"), "1.0.1")
+        self.assertEqual(
+            find_latest_version(blobs, "weights", "vet_yolox"), "1.0.0"
+        )
+        self.assertEqual(
+            find_latest_version(blobs, "weights", "lis_yolox"), "1.0.1"
+        )
+        self.assertIsNone(find_latest_version(blobs, "weights", "other_yolox"))
         self.assertIsNone(find_latest_version([], "weights"))
 
     def test_clean_local_weights_preserves_logs(self):
