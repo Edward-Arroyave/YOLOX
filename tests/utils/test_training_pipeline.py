@@ -5,6 +5,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from pipeline.run_training_pipeline import (
+    REPOSITORY_ROOT,
+    add_repository_to_pythonpath,
     clean_local_weights,
     current_dataset_folder,
     experiment_path,
@@ -50,6 +52,15 @@ class TestTrainingPipeline(unittest.TestCase):
         self.assertRegex(current_dataset_folder("America/Bogota"), r"^\d{1,2}-\d{4}$")
         with self.assertRaises(ValueError):
             current_dataset_folder("Invalid/Timezone")
+
+    def test_add_repository_to_pythonpath(self):
+        environment = {"PYTHONPATH": "existing/path"}
+        add_repository_to_pythonpath(environment)
+        entries = environment["PYTHONPATH"].split(os.pathsep)
+        self.assertEqual(entries[0], str(REPOSITORY_ROOT))
+        self.assertIn("existing/path", entries)
+        add_repository_to_pythonpath(environment)
+        self.assertEqual(entries, environment["PYTHONPATH"].split(os.pathsep))
 
     def test_find_latest_version(self):
         blobs = [

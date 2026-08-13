@@ -92,6 +92,15 @@ def display_command(command: list[str]) -> str:
     return " ".join(shlex.quote(part) for part in command)
 
 
+def add_repository_to_pythonpath(environment: dict[str, str]) -> None:
+    repository = str(REPOSITORY_ROOT)
+    current = environment.get("PYTHONPATH", "")
+    entries = [entry for entry in current.split(os.pathsep) if entry]
+    if repository not in entries:
+        entries.insert(0, repository)
+    environment["PYTHONPATH"] = os.pathsep.join(entries)
+
+
 def run_stage(
     name: str,
     command: list[str],
@@ -285,6 +294,7 @@ def main() -> int:
 
         child_environment = os.environ.copy()
         child_environment["YOLOX_DATA_DIR"] = str(data_dir)
+        add_repository_to_pythonpath(child_environment)
         env_args = ["--env-file", str(loaded)] if loaded else []
 
         clean_command = [sys.executable, "tools/clean_datasets.py", *env_args, "--yes"]

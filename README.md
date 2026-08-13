@@ -163,6 +163,8 @@ python pipeline/run_training_pipeline.py \
 
 Si falla la descarga, el entrenamiento, ONNX o la publicación, el pipeline se
 detiene y conserva los archivos locales para facilitar el diagnóstico.
+El pipeline agrega automáticamente la raíz del repositorio a `PYTHONPATH`, por
+lo que no requiere instalar el código local con `pip install -e .`.
 
 ## Configuración única
 

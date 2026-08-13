@@ -16,6 +16,9 @@ del ONNX: `vet_yolox` o `lis_yolox`. Ambos usan la misma configuración `.env`.
 Si falla una etapa, las siguientes no se ejecutan y se conservan los archivos
 locales para diagnóstico.
 
+El orquestador configura `PYTHONPATH` para sus subprocesos, así que los comandos
+de entrenamiento pueden importar `yolox` directamente desde el repositorio.
+
 ## Ejecución
 
 Simulación para veterinaria:
