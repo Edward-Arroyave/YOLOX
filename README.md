@@ -1,7 +1,169 @@
-<div align="center"><img src="assets/logo.png" width="350"></div>
-<img src="assets/demo.png" >
+# Pipeline privado de entrenamiento y publicación
 
-## Configuración del dataset personalizado
+Este repositorio ejecuta el ciclo operativo de entrenamiento por proyecto. El
+comando principal obtiene el último modelo desde Azure Blob Storage, descarga
+el dataset, entrena, exporta a ONNX, publica una versión nueva y limpia los
+archivos locales cuando todo termina correctamente.
+
+Los perfiles están separados. Actualmente se contemplan `vet_yolox` para
+veterinaria y `lis_yolox` para las demás pruebas. Cada perfil define en `.env`
+su dataset, experimento y carpeta de pesos.
+
+## Inicio rápido en GCP
+
+Clonar o actualizar el repositorio:
+
+```bash
+git clone https://github.com/Edward-Arroyave/YOLOX.git
+cd YOLOX
+
+# Si el repositorio ya existe:
+git pull origin main
+```
+
+Crear y activar el entorno compatible con PyTorch 1.12.1:
+
+```bash
+conda create -n ia-yolox-training python=3.10 pip -y
+conda activate ia-yolox-training
+
+python -m pip install -r requirements.txt \
+  --extra-index-url https://download.pytorch.org/whl/cu113
+```
+
+Comprobar que la GPU está disponible:
+
+```bash
+python -c "import torch; print(torch.__version__); print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0))"
+```
+
+Crear la configuración privada:
+
+```bash
+cp .env.example .env
+chmod 600 .env
+```
+
+Editar `.env` y reemplazar la clave de ejemplo por la cadena real. `.env` está
+ignorado por Git y no se debe incluir en commits, imágenes ni logs.
+
+## Comando principal
+
+Antes de ejecutar, simular el flujo. La simulación consulta Azure, pero no
+descarga, elimina, entrena ni publica:
+
+```bash
+python pipeline/run_training_pipeline.py \
+  --project vet_yolox \
+  --yes-clean \
+  --dry-run
+```
+
+Ejecutar el pipeline completo:
+
+```bash
+python pipeline/run_training_pipeline.py \
+  --project vet_yolox \
+  --yes-clean
+```
+
+Para LIS, cambiar el perfil y configurar previamente todas las variables
+`LIS_YOLOX_*` de `.env`:
+
+```bash
+python pipeline/run_training_pipeline.py \
+  --project lis_yolox \
+  --yes-clean
+```
+
+## Qué hace una ejecución
+
+Para `vet_yolox`, cuando la última versión es `1.0.0`, el flujo:
+
+1. Detecta la última versión en `weights/`, actualmente `1.0.0`.
+2. Descarga `weights/1.0.0/best_ckpt.pth` como modelo base.
+3. Elimina el contenido local de `datasets/`.
+4. Descarga las imágenes y anotaciones configuradas para veterinaria.
+5. Entrena usando el último `.pth` como base de *fine-tuning*.
+6. Genera el nuevo checkpoint y `vet_yolox.onnx`.
+7. Publica ambos pesos y un informe README en `weights/1.0.1/`.
+8. Elimina imágenes y pesos locales únicamente después de publicar con éxito.
+
+El resultado en Azure será:
+
+```text
+weights/1.0.1/
+├── best_ckpt.pth
+├── vet_yolox.onnx
+└── README.md
+```
+
+El README publicado registra el proyecto, dataset, versión base, versión nueva,
+experimento, GPU, batch, FP16, época, AP, tamaños y hashes SHA-256.
+
+## Reglas de versión
+
+La versión se calcula automáticamente consultando el último `best_ckpt.pth` del
+perfil en Azure. El pipeline incrementa el parche SemVer:
+
+```text
+última versión 1.0.0 -> nueva versión permitida 1.0.1
+última versión 1.0.1 -> nueva versión permitida 1.0.2
+```
+
+El pipeline se detiene antes de entrenar si la versión no es consecutiva. Para
+crear el primer modelo de un perfil sin peso base:
+
+```bash
+python pipeline/run_training_pipeline.py \
+  --project lis_yolox \
+  --yes-clean \
+  --allow-no-base
+```
+
+## Opciones importantes
+
+```text
+--project NOMBRE       perfil configurado, por ejemplo vet_yolox o lis_yolox
+--version X.Y.Z        validación manual opcional de la versión calculada
+--yes-clean            autoriza limpiar imágenes antes y después del flujo
+--skip-clean           conserva los datasets locales
+--keep-local-weights   conserva los pesos locales después de publicar
+--allow-no-base        permite crear 1.0.0 sin un modelo anterior
+--dry-run              muestra el flujo sin realizar cambios
+--env-file RUTA        utiliza otro archivo de variables
+```
+
+Si falla la descarga, el entrenamiento, ONNX o la publicación, el pipeline se
+detiene y conserva los archivos locales para facilitar el diagnóstico.
+
+## Configuración por proyecto
+
+Las variables se forman con el nombre del proyecto en mayúsculas. Por ejemplo,
+`--project vet_yolox` utiliza `VET_YOLOX_*`:
+
+```dotenv
+VET_YOLOX_DATASET_FOLDER=8-2026
+VET_YOLOX_BLOB_BASE_PREFIX=training_yolox
+VET_YOLOX_WEIGHTS_PREFIX=weights
+VET_YOLOX_EXP_FILE=exps/vet/vet_yolox.py
+VET_YOLOX_DATA_DIR=datasets/8-2026
+VET_YOLOX_TRAIN_IMAGES=training/images
+VET_YOLOX_VAL_IMAGES=val/images
+VET_YOLOX_TEST_IMAGES=val/images
+VET_YOLOX_ANNOTATIONS_DIR=.
+VET_YOLOX_TRAIN_ANN=training/annotations/annotations.json
+VET_YOLOX_VAL_ANN=val/annotations/annotations.json
+VET_YOLOX_TEST_ANN=val/annotations/annotations.json
+```
+
+La configuración completa y el bloque equivalente para LIS están en
+`.env.example`. La guía específica del orquestador está en
+`pipeline/README.md`.
+
+## Herramientas individuales y configuración avanzada
+
+### Configuración del dataset personalizado
 
 El experimento `exps/vet/vet_yolox.py` permite configurar las carpetas mediante
 variables de entorno. Ya no es obligatorio usar los nombres `train2017`,
@@ -16,16 +178,16 @@ cp .env.example .env
 Editar `.env` con las rutas requeridas:
 
 ```dotenv
-YOLOX_DATA_DIR=/mnt/datasets/cassettes
+YOLOX_DATA_DIR=datasets/8-2026
 
-YOLOX_TRAIN_IMAGES=images/train
-YOLOX_VAL_IMAGES=images/val
-YOLOX_TEST_IMAGES=images/test
+YOLOX_TRAIN_IMAGES=training/images
+YOLOX_VAL_IMAGES=val/images
+YOLOX_TEST_IMAGES=val/images
 
-YOLOX_ANNOTATIONS_DIR=labels/coco
-YOLOX_TRAIN_ANN=train.json
-YOLOX_VAL_ANN=val.json
-YOLOX_TEST_ANN=test.json
+YOLOX_ANNOTATIONS_DIR=.
+YOLOX_TRAIN_ANN=training/annotations/annotations.json
+YOLOX_VAL_ANN=val/annotations/annotations.json
+YOLOX_TEST_ANN=val/annotations/annotations.json
 ```
 
 El experimento carga `.env` automáticamente al iniciar:
@@ -39,12 +201,10 @@ python tools/train.py -f exps/vet/vet_yolox.py -d 1 -b 8 --fp16
 Con esa configuración se utilizan estas rutas:
 
 ```text
-/mnt/datasets/cassettes/images/train/
-/mnt/datasets/cassettes/images/val/
-/mnt/datasets/cassettes/images/test/
-/mnt/datasets/cassettes/labels/coco/train.json
-/mnt/datasets/cassettes/labels/coco/val.json
-/mnt/datasets/cassettes/labels/coco/test.json
+datasets/8-2026/training/images/
+datasets/8-2026/val/images/
+datasets/8-2026/training/annotations/annotations.json
+datasets/8-2026/val/annotations/annotations.json
 ```
 
 Si no se define ninguna variable, se conserva la estructura anterior bajo
@@ -56,48 +216,48 @@ tienen prioridad sobre los valores del archivo `.env`.
 Agregar al archivo `.env` la cadena de conexión, el contenedor y el destino:
 
 ```dotenv
-AZURE_STORAGE_CONNECTION_STRING=DefaultEndpointsProtocol=https;AccountName=<cuenta>;AccountKey=<clave>;EndpointSuffix=core.windows.net
-AZURE_STORAGE_CONTAINER=datasets
-AZURE_BLOB_BASE_PREFIX=incoming
+AZURE_STORAGE_CONNECTION_STRING=DefaultEndpointsProtocol=https;AccountName=poctvet;AccountKey=<clave-de-poctvet>;EndpointSuffix=core.windows.net
+AZURE_STORAGE_CONTAINER=rapitestlis
+AZURE_BLOB_BASE_PREFIX=training_yolox
 AZURE_INGEST_DESTINATION=datasets
 ```
 
 `AZURE_BLOB_BASE_PREFIX` es opcional. Para descargar la carpeta virtual
-`incoming/COCO/` del contenedor:
+`training_yolox/8-2026/` del contenedor:
 
 ```bash
-python tools/ingest_blob_storage.py --folder COCO --dry-run
-python tools/ingest_blob_storage.py --folder COCO
+python tools/ingest_blob_storage.py --folder 8-2026 --dry-run
+python tools/ingest_blob_storage.py --folder 8-2026
 ```
 
 El primer comando solamente muestra los archivos. El segundo los descarga y
 conserva la estructura:
 
 ```text
-Azure: <contenedor>/incoming/COCO/
-                         ├── annotations/train.json
-                         ├── annotations/val.json
-                         ├── train2017/...
-                         └── val2017/...
+Azure: rapitestlis/training_yolox/8-2026/
+                         ├── training/images/...
+                         ├── training/annotations/annotations.json
+                         ├── val/images/...
+                         └── val/annotations/annotations.json
 
-Local: <repositorio>/datasets/COCO/
-                         ├── annotations/train.json
-                         ├── annotations/val.json
-                         ├── train2017/...
-                         └── val2017/...
+Local: <repositorio>/datasets/8-2026/
+                         ├── training/images/...
+                         ├── training/annotations/annotations.json
+                         ├── val/images/...
+                         └── val/annotations/annotations.json
 ```
 
 En este caso la configuración de YOLOX puede ser:
 
 ```dotenv
-YOLOX_DATA_DIR=datasets/COCO
-YOLOX_TRAIN_IMAGES=train2017
-YOLOX_VAL_IMAGES=val2017
-YOLOX_TEST_IMAGES=test2017
-YOLOX_ANNOTATIONS_DIR=annotations
-YOLOX_TRAIN_ANN=train.json
-YOLOX_VAL_ANN=val.json
-YOLOX_TEST_ANN=test.json
+YOLOX_DATA_DIR=datasets/8-2026
+YOLOX_TRAIN_IMAGES=training/images
+YOLOX_VAL_IMAGES=val/images
+YOLOX_TEST_IMAGES=val/images
+YOLOX_ANNOTATIONS_DIR=.
+YOLOX_TRAIN_ANN=training/annotations/annotations.json
+YOLOX_VAL_ANN=val/annotations/annotations.json
+YOLOX_TEST_ANN=val/annotations/annotations.json
 ```
 
 Después de la ingesta se inicia el entrenamiento normalmente:
@@ -119,7 +279,85 @@ Opciones útiles del comando:
 La cadena de conexión no se imprime. El archivo `.env` está excluido de Git y
 no debe copiarse a imágenes Docker, logs o documentación.
 
-## Introduction
+### Limpiar y volver a cargar los datasets
+
+Antes de eliminar, revisar la ruta y la cantidad de archivos detectados:
+
+```bash
+python tools/clean_datasets.py --dry-run
+```
+
+Para eliminar todo el contenido de `AZURE_INGEST_DESTINATION` y conservar la
+carpeta raíz `datasets/`:
+
+```bash
+python tools/clean_datasets.py --yes
+```
+
+Después se puede cargar nuevamente el lote desde Azure:
+
+```bash
+python tools/ingest_blob_storage.py --folder 8-2026
+```
+
+Flujo completo para una actualización controlada:
+
+```bash
+python tools/clean_datasets.py --dry-run
+python tools/clean_datasets.py --yes
+python tools/ingest_blob_storage.py --folder 8-2026
+```
+
+La limpieza es local: no elimina blobs de Azure. El comando rechaza la raíz del
+sistema, el directorio personal y la raíz del repositorio como destinos.
+
+### Publicar el mejor peso en Azure
+
+La variable `AZURE_WEIGHTS_PREFIX` define la carpeta de modelos en el mismo
+contenedor configurado para la ingesta:
+
+```dotenv
+AZURE_WEIGHTS_PREFIX=weights
+```
+
+Después del entrenamiento, ejecutar primero una simulación con el mejor peso:
+
+```bash
+python tools/publish_weights.py \
+  --ckpt YOLOX_outputs/vet_yolox/best_ckpt.pth \
+  --exp-file exps/vet/vet_yolox.py \
+  --project vet_yolox \
+  --dry-run
+```
+
+Para exportar a ONNX y subir los dos formatos:
+
+```bash
+python tools/publish_weights.py \
+  --ckpt YOLOX_outputs/vet_yolox/best_ckpt.pth \
+  --exp-file exps/vet/vet_yolox.py \
+  --project vet_yolox
+```
+
+La herramienta consulta las versiones existentes y crea la siguiente carpeta:
+
+```text
+weights/1.0.0/
+├── best_ckpt.pth
+├── vet_yolox.onnx
+└── README.md
+```
+
+Si ya existe `1.0.0`, crea `1.0.1`, y así consecutivamente. Para seleccionar una
+versión concreta se puede usar `--version 1.0.7`. La
+herramienta nunca sobrescribe archivos existentes.
+
+## Referencia técnica original de YOLOX
+
+La documentación siguiente se conserva como referencia del proyecto upstream,
+incluyendo arquitectura, modelos, evaluación y exportadores originales.
+
+### Introduction
 YOLOX is an anchor-free version of YOLO, with a simpler design but better performance! It aims to bridge the gap between research and industrial communities.
 For more details, please refer to our [report on Arxiv](https://arxiv.org/abs/2107.08430).
 

@@ -105,6 +105,11 @@ def make_parser() -> argparse.ArgumentParser:
         help="Raíz local. Por defecto usa AZURE_INGEST_DESTINATION o datasets.",
     )
     parser.add_argument(
+        "--base-prefix",
+        default=None,
+        help="Prefijo remoto. Por defecto usa AZURE_BLOB_BASE_PREFIX.",
+    )
+    parser.add_argument(
         "--env-file",
         default=None,
         help="Archivo .env. Por defecto usa .env en la raíz del repositorio.",
@@ -132,7 +137,11 @@ def main() -> int:
             raise ValueError("Falta AZURE_STORAGE_CONTAINER en el entorno o .env")
 
         folder = normalize_blob_folder(args.folder)
-        base_prefix = os.getenv("AZURE_BLOB_BASE_PREFIX", "")
+        base_prefix = (
+            args.base_prefix
+            if args.base_prefix is not None
+            else os.getenv("AZURE_BLOB_BASE_PREFIX", "")
+        )
         azure_prefix = combine_prefix(base_prefix, folder)
         listing_prefix = azure_prefix + "/"
 

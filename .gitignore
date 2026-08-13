@@ -3,6 +3,7 @@
 
 # user experiments directory
 YOLOX_outputs/
+.pipeline_artifacts/
 datasets/
 # do not ignore datasets under yolox/data
 !*yolox/data/datasets/
