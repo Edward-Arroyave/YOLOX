@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import os
 import re
 import shlex
@@ -35,6 +36,14 @@ from tools.publish_weights import (  # noqa: E402
 
 
 PREFIX_PATTERN = re.compile(r"^[a-z][a-z0-9_-]*$")
+RUNTIME_DEPENDENCIES = {
+    "torch": "torch",
+    "thop": "thop",
+    "cv2": "opencv-python",
+    "pycocotools": "pycocotools",
+    "tensorboard": "tensorboard",
+    "onnx": "onnx",
+}
 
 
 def env_bool(name: str, default: bool = False) -> bool:
@@ -101,6 +110,17 @@ def add_repository_to_pythonpath(environment: dict[str, str]) -> None:
     environment["PYTHONPATH"] = os.pathsep.join(entries)
 
 
+def missing_runtime_dependencies(require_onnxsim: bool) -> list[str]:
+    dependencies = dict(RUNTIME_DEPENDENCIES)
+    if require_onnxsim:
+        dependencies["onnxsim"] = "onnx-simplifier"
+    return [
+        package
+        for module, package in dependencies.items()
+        if importlib.util.find_spec(module) is None
+    ]
+
+
 def run_stage(
     name: str,
     command: list[str],
@@ -118,11 +138,8 @@ def run_stage(
         )
 
 
-def find_latest_version(
-    blob_names: list[str], weights_prefix: str, project: str | None = None
-) -> str | None:
+def find_latest_version(blob_names: list[str], weights_prefix: str) -> str | None:
     base = weights_prefix.rstrip("/") + "/"
-    names = set(blob_names)
     versions = []
     for name in blob_names:
         if not name.startswith(base) or not name.endswith("/best_ckpt.pth"):
@@ -130,10 +147,7 @@ def find_latest_version(
         relative = name[len(base):]
         version = relative.split("/", 1)[0]
         match = VERSION_PATTERN.fullmatch(version)
-        project_onnx = combine_prefix(
-            combine_prefix(weights_prefix, version), f"{project}.onnx"
-        ) if project else None
-        if match and (project_onnx is None or project_onnx in names):
+        if match:
             versions.append(tuple(int(part) for part in match.groups()))
     return format_version(max(versions)) if versions else None
 
@@ -210,7 +224,7 @@ def make_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--allow-no-base",
         action="store_true",
-        help="Permite publicar el primer modelo de un prefijo sin base previa.",
+        help="Permite publicar el primer modelo cuando weights/ no tiene un checkpoint.",
     )
     parser.add_argument(
         "--dry-run",
@@ -258,10 +272,20 @@ def main() -> int:
         devices = int(os.getenv("PIPELINE_DEVICES", "1"))
         batch_size = int(os.getenv("PIPELINE_BATCH_SIZE", "8"))
         fp16 = env_bool("PIPELINE_FP16", True)
+        no_onnx_simplify = env_bool("PIPELINE_ONNX_NO_SIMPLIFY", False)
         if devices < 1 or batch_size < 1:
             raise ValueError("PIPELINE_DEVICES y PIPELINE_BATCH_SIZE deben ser mayores que cero")
         if not exp_file.is_file():
             raise ValueError(f"No existe el experimento configurado: {exp_file}")
+        if not args.dry_run:
+            missing = missing_runtime_dependencies(not no_onnx_simplify)
+            if missing:
+                raise RuntimeError(
+                    "Faltan dependencias del pipeline: "
+                    + ", ".join(missing)
+                    + ". Ejecute: python -m pip install -r requirements.txt "
+                    "--extra-index-url https://download.pytorch.org/whl/cu113"
+                )
 
         connection_string = required_env("AZURE_STORAGE_CONNECTION_STRING")
         container = required_env("AZURE_STORAGE_CONTAINER")
@@ -269,9 +293,8 @@ def main() -> int:
         existing = [
             blob.name for blob in client.list_blobs(name_starts_with=weights_prefix + "/")
         ]
-        latest_version = find_latest_version(existing, weights_prefix, project)
-        latest_global_version = find_latest_version(existing, weights_prefix)
-        expected_target = next_patch_version(latest_global_version)
+        latest_version = find_latest_version(existing, weights_prefix)
+        expected_target = next_patch_version(latest_version)
         target_version = (
             format_version(version_number(args.version))
             if args.version
@@ -285,7 +308,7 @@ def main() -> int:
         if latest_version is None and not args.allow_no_base:
             raise ValueError(
                 f"No hay un modelo base en {container}/{weights_prefix}/; "
-                f"use --allow-no-base solo para el primer modelo de {prefix}"
+                "use --allow-no-base solo para el primer modelo"
             )
 
         base_checkpoint = None
@@ -355,14 +378,14 @@ def main() -> int:
             publish_command.append("--fp16")
         if env_bool("PIPELINE_ONNX_DYNAMIC", False):
             publish_command.append("--dynamic")
-        if env_bool("PIPELINE_ONNX_NO_SIMPLIFY", False):
+        if no_onnx_simplify:
             publish_command.append("--no-onnxsim")
 
         print("Pipeline configurado:")
         print(f"  Prefijo: {prefix}")
         print(f"  Proyecto: {project}")
         print(f"  Modelo base: {latest_version or 'ninguno'}")
-        print(f"  Última versión global: {latest_global_version or 'ninguna'}")
+        print(f"  Última versión en {weights_prefix}/: {latest_version or 'ninguna'}")
         print(f"  Nueva versión: {target_version}")
         print(f"  Dataset: {container}/{blob_base_prefix}/{dataset_folder}/")
         print(f"  Dataset local: {data_dir}")

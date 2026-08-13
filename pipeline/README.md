@@ -6,7 +6,7 @@ del ONNX: `vet_yolox` o `lis_yolox`. Ambos usan la misma configuración `.env`.
 ## Flujo
 
 1. Consulta las versiones bajo `weights/` en Azure.
-2. Descarga el último `best_ckpt.pth` cuya versión contenga el ONNX del prefijo.
+2. Busca la carpeta de versión más alta y descarga su `best_ckpt.pth`.
 3. Limpia el dataset local y descarga el lote configurado.
 4. Entrena usando el último checkpoint como base de *fine-tuning*.
 5. Exporta el nuevo mejor checkpoint a ONNX.
@@ -18,6 +18,8 @@ locales para diagnóstico.
 
 El orquestador configura `PYTHONPATH` para sus subprocesos, así que los comandos
 de entrenamiento pueden importar `yolox` directamente desde el repositorio.
+También valida las dependencias de entrenamiento y ONNX antes de eliminar o
+descargar datasets.
 
 ## Ejecución
 
@@ -64,13 +66,14 @@ Para LIS:
 ```bash
 python pipeline/run_training_pipeline.py \
   --prefix lis \
-  --yes-clean \
-  --allow-no-base
+  --yes-clean
 ```
 
-`--allow-no-base` solo se utiliza para publicar el primer modelo de un prefijo.
-En ejecuciones posteriores, el pipeline exige y descarga la última versión que
-contenga su ONNX correspondiente.
+El pipeline busca la carpeta de versión SemVer más alta en `weights/` que
+contenga `best_ckpt.pth` y la descarga automáticamente. No se pasa la ruta del
+checkpoint y el ONNX existente puede pertenecer a otro prefijo. Use
+`--allow-no-base` únicamente cuando `weights/` todavía no contenga ningún
+checkpoint.
 
 La versión se calcula automáticamente. Si la última es `1.0.0`, el pipeline
 publica `1.0.1`. `--version` es opcional y solo permite confirmar manualmente el

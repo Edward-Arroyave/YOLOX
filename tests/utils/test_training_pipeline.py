@@ -13,6 +13,7 @@ from pipeline.run_training_pipeline import (
     env_bool,
     find_latest_version,
     normalize_model_prefix,
+    missing_runtime_dependencies,
     required_env,
 )
 
@@ -62,6 +63,16 @@ class TestTrainingPipeline(unittest.TestCase):
         add_repository_to_pythonpath(environment)
         self.assertEqual(entries, environment["PYTHONPATH"].split(os.pathsep))
 
+    def test_missing_runtime_dependencies(self):
+        with patch(
+            "pipeline.run_training_pipeline.importlib.util.find_spec",
+            side_effect=lambda module: None if module in {"thop", "onnxsim"} else object(),
+        ):
+            self.assertEqual(missing_runtime_dependencies(False), ["thop"])
+            self.assertEqual(
+                missing_runtime_dependencies(True), ["thop", "onnx-simplifier"]
+            )
+
     def test_find_latest_version(self):
         blobs = [
             "weights/1.0.0/best_ckpt.pth",
@@ -70,14 +81,14 @@ class TestTrainingPipeline(unittest.TestCase):
             "weights/1.0.1/lis_yolox.onnx",
         ]
         self.assertEqual(find_latest_version(blobs, "weights"), "1.0.1")
-        self.assertEqual(
-            find_latest_version(blobs, "weights", "vet_yolox"), "1.0.0"
-        )
-        self.assertEqual(
-            find_latest_version(blobs, "weights", "lis_yolox"), "1.0.1"
-        )
-        self.assertIsNone(find_latest_version(blobs, "weights", "other_yolox"))
         self.assertIsNone(find_latest_version([], "weights"))
+
+    def test_latest_version_only_requires_checkpoint(self):
+        blobs = [
+            "weights/1.0.0/best_ckpt.pth",
+            "weights/1.0.0/vet_yolox.onnx",
+        ]
+        self.assertEqual(find_latest_version(blobs, "weights"), "1.0.0")
 
     def test_clean_local_weights_preserves_logs(self):
         with tempfile.TemporaryDirectory() as directory:

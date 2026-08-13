@@ -128,9 +128,11 @@ experimento, GPU, batch, FP16, época, AP, tamaños y hashes SHA-256.
 
 ## Reglas de versión
 
-La versión nueva se calcula con el último `best_ckpt.pth` global. El modelo base
-se selecciona de una versión que también contenga `<prefijo>_yolox.onnx`, lo que
-evita usar un peso de otro prefijo. El pipeline incrementa el parche SemVer:
+La versión nueva y el modelo base se calculan buscando automáticamente la
+carpeta SemVer más alta dentro de `weights/` que contenga `best_ckpt.pth`. El
+prefijo solo determina el experimento y el nombre del ONNX nuevo; no es
+necesario indicar la ruta exacta del checkpoint. El pipeline incrementa el
+parche SemVer:
 
 ```text
 última versión 1.0.0 -> nueva versión permitida 1.0.1
@@ -138,7 +140,8 @@ evita usar un peso de otro prefijo. El pipeline incrementa el parche SemVer:
 ```
 
 El pipeline se detiene antes de entrenar si la versión no es consecutiva. Para
-crear el primer modelo de un prefijo sin peso base:
+crear el primer modelo cuando todavía no existe ningún `best_ckpt.pth` en
+`weights/`:
 
 ```bash
 python pipeline/run_training_pipeline.py \
@@ -156,7 +159,7 @@ python pipeline/run_training_pipeline.py \
 --yes-clean            autoriza limpiar imágenes antes y después del flujo
 --skip-clean           conserva los datasets locales
 --keep-local-weights   conserva los pesos locales después de publicar
---allow-no-base        permite el primer modelo de un prefijo sin base anterior
+--allow-no-base        permite entrenar si weights/ aún no contiene un checkpoint
 --dry-run              muestra el flujo sin realizar cambios
 --env-file RUTA        utiliza otro archivo de variables
 ```
@@ -165,6 +168,8 @@ Si falla la descarga, el entrenamiento, ONNX o la publicación, el pipeline se
 detiene y conserva los archivos locales para facilitar el diagnóstico.
 El pipeline agrega automáticamente la raíz del repositorio a `PYTHONPATH`, por
 lo que no requiere instalar el código local con `pip install -e .`.
+Antes de limpiar datos, también verifica las dependencias necesarias para
+entrenar y exportar, incluyendo `thop` para calcular FLOPs.
 
 ## Configuración única
 
