@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import time
+from uuid import uuid4
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -310,7 +311,14 @@ def main() -> int:
         if latest_version:
             base_checkpoint = artifacts_project / latest_version / "best_ckpt.pth"
 
+        report_dir = output_project / "reports" / target_version / uuid4().hex
+        base_metrics = base_checkpoint.with_name("metrics.json") if base_checkpoint else None
         child_environment = os.environ.copy()
+        child_environment["YOLOX_REPORT_DIR"] = str(report_dir)
+        child_environment["YOLOX_MODEL_VERSION"] = target_version
+        child_environment["YOLOX_BASE_VERSION"] = latest_version or "none"
+        child_environment["YOLOX_DATASET_VERSION"] = dataset_folder
+        child_environment.pop("YOLOX_BASE_METRICS", None)
         child_environment["YOLOX_DATA_DIR"] = str(data_dir)
         add_repository_to_pythonpath(child_environment)
         env_args = ["--env-file", str(loaded)] if loaded else []
@@ -349,6 +357,8 @@ def main() -> int:
         publish_command = [
             sys.executable,
             "tools/publish_weights.py",
+            "--report-dir",
+            str(report_dir),
             *env_args,
             "--ckpt",
             str(checkpoint),
@@ -391,6 +401,11 @@ def main() -> int:
             print(f"{weights_prefix}/{latest_version}/best_ckpt.pth -> {base_checkpoint}")
             if not args.dry_run:
                 download_base_checkpoint(client, weights_prefix, latest_version, base_checkpoint)
+                metrics_blob = combine_prefix(combine_prefix(weights_prefix, latest_version), "metrics.json")
+                if metrics_blob in existing:
+                    with base_metrics.open("wb") as stream:
+                        client.get_blob_client(metrics_blob).download_blob().readinto(stream)
+                    child_environment["YOLOX_BASE_METRICS"] = str(base_metrics)
         else:
             print("Primer entrenamiento: no existe un modelo base.")
 
@@ -411,6 +426,13 @@ def main() -> int:
                 raise RuntimeError("El entrenamiento no actualizó best_ckpt.pth")
             if current_mtime < training_started:
                 raise RuntimeError("best_ckpt.pth es anterior a esta ejecución")
+
+        print("\n=== Verificar ficha t?cnica del entrenamiento ===", flush=True)
+        print(f"Ficha y m?tricas: {report_dir}")
+        if not args.dry_run:
+            for name in ("metrics.json", "model_card.md"):
+                if not (report_dir / name).is_file():
+                    raise RuntimeError(f"No se gener? {report_dir / name}")
 
         run_stage("5/6 Exportar y publicar", publish_command, args.dry_run, child_environment)
 

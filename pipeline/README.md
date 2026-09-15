@@ -10,7 +10,7 @@ del ONNX: `vet_yolox` o `lis_yolox`. Ambos usan la misma configuración `.env`.
 3. Limpia el dataset local y descarga el lote configurado.
 4. Entrena usando el último checkpoint como base de *fine-tuning*.
 5. Exporta el nuevo mejor checkpoint a ONNX.
-6. Calcula la siguiente versión y publica `.pth`, `.onnx` y `README.md`.
+6. Calcula la siguiente versión y publica `.pth`, `.onnx`, `model_card.md` y `metrics.json`.
 7. Elimina las imágenes y los pesos locales después de una publicación exitosa.
 
 Si falla una etapa, las siguientes no se ejecutan y se conservan los archivos
@@ -92,15 +92,15 @@ Opciones de conservación:
 weights/1.0.1/
 ├── best_ckpt.pth
 ├── vet_yolox.onnx
-└── README.md
+└── model_card.md + metrics.json
 
 <prefijo-lis>/1.0.0/
 ├── best_ckpt.pth
 ├── lis_yolox.onnx
-└── README.md
+└── model_card.md + metrics.json
 ```
 
-El README publicado registra proyecto, versión, modelo base, dataset,
+La ficha t?cnica publicada registra proyecto, versión, modelo base, dataset,
 experimento, GPU, batch, FP16, fecha, época, AP, tamaños y hashes SHA-256.
 
 ## Estructura fija del dataset
@@ -125,3 +125,55 @@ La configuración compartida usa `PIPELINE_BLOB_BASE_PREFIX`,
 El batch del entrenamiento no es una variable de entorno. Se define una sola
 vez mediante `TRAIN_BATCH_SIZE` en `exps/cassette/settings.py` y actualmente
 vale `8`.
+# Ficha técnica automática
+
+Cada entrenamiento exitoso genera `metrics.json` y `model_card.md`. La captura
+ocurre en el evaluador COCO existente y el documento se escribe después del
+último ciclo de entrenamiento/evaluación, antes de exportar y publicar. No se
+ejecuta otra inferencia ni otra evaluación. También funciona con `tools/train.py`.
+
+El pipeline guarda cada ejecución en:
+
+```text
+YOLOX_outputs/<proyecto>/reports/<versión>/<id-ejecución>/
+    metrics.json
+    model_card.md
+```
+
+La limpieza de pesos conserva este historial. Azure recibe ambos archivos en
+`<weights-prefix>/<versión>/`, junto al checkpoint y ONNX. No se genera ni publica un README por modelo. La publicación
+usa `overwrite=False`; una subida fallida revierte los archivos subidos por esa
+ejecución. El comando de publicación independiente requiere `--report-dir`.
+
+## Procedencia y significado
+
+- `best` contiene los resultados de la época que produjo `best_ckpt.pth`;
+  `evaluations` conserva las evaluaciones de esta ejecución. La selección incluye
+  el primer resultado cero para poder guardar un modelo inicial sin detecciones.
+- AP50, AP75, mAP 50:95, AR (máximo 100 detecciones), AP/AR por clase y tiempo
+  de inferencia proceden del evaluador. AP/AR usan escala 0–1. Las diferencias
+  se expresan en unidades absolutas y puntos porcentuales.
+- Las pérdidas son promedios por iteración de la última época, del proceso rank 0.
+  No representan un promedio distribuido. Validation loss, precision, recall,
+  IoU de detección y FPS son `N/A`: este pipeline no los calcula como métricas
+  independientes. IoU loss no se presenta como IoU de detección.
+- El experimento efectivo aporta arquitectura, dimensiones e hiperparámetros,
+  incluyendo cambios recibidos por argumentos. Se registran hardware, fechas,
+  checkpoint inicial, mejor época y hashes de artefactos.
+- Los JSON COCO aportan imágenes y anotaciones por clase de cada split. Si test
+  reutiliza las anotaciones de validación no se cuenta como conjunto independiente.
+  El total es la suma de registros de los splits distintos; el crecimiento usa
+  contenido único (SHA-256 de imágenes), por lo que duplicados cuentan una vez.
+  El JSON conserva los hashes de imágenes y anotaciones para trazabilidad.
+- El pipeline descarga `metrics.json` de la versión base si existe. Para modelos
+  anteriores sin informe se puede reutilizar `curr_ap` del checkpoint cargado;
+  las demás métricas y el crecimiento quedan como `N/A`. No se evalúa la base.
+- La conclusión advierte si no se verifica la misma validación (anotaciones e
+  imágenes). Una diferencia entre datasets distintos no demuestra superioridad.
+- Los entrenamientos fallidos no generan una ficha de éxito. La escritura es
+  exclusiva y las ejecuciones tienen identificadores únicos para no sobrescribir
+  fichas anteriores. Un error de escritura detiene la publicación.
+
+El esquema JSON versión 1 separa `model`, `training`, `hardware`, `dataset`,
+`best`, `evaluations`, `losses`, `artifacts`, `base_model` y `comparison`.
+Los valores ausentes se serializan como `null` y se muestran como `N/A`.

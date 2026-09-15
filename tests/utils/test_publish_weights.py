@@ -1,6 +1,9 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+from tools import publish_weights
 
 from tools.publish_weights import (
     find_next_version,
@@ -13,6 +16,31 @@ from tools.publish_weights import (
 
 
 class TestPublishWeights(unittest.TestCase):
+    def test_publication_contains_card_and_metrics_without_readme(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            checkpoint = root / "best_ckpt.pth"
+            checkpoint.write_bytes(b"model")
+            exp = root / "exp.py"
+            exp.write_text("# experiment")
+            (root / "model_card.md").write_text("# Model card")
+            (root / "metrics.json").write_text("{}")
+            client = MagicMock()
+            client.list_blobs.return_value = []
+            argv = ["publish_weights", "--ckpt", str(checkpoint), "--exp-file", str(exp),
+                    "--project", "lis_yolox", "--version", "1.0.0", "--report-dir", str(root)]
+            with patch("sys.argv", argv), patch.object(publish_weights, "load_environment"), \
+                    patch.dict("os.environ", {"AZURE_STORAGE_CONNECTION_STRING": "test",
+                                             "AZURE_STORAGE_CONTAINER": "models"}), \
+                    patch.object(publish_weights, "create_container_client", return_value=client), \
+                    patch.object(publish_weights, "export_onnx",
+                                 side_effect=lambda ckpt, output, *args: output.write_bytes(b"onnx")):
+                self.assertEqual(publish_weights.main(), 0)
+            names = [call.kwargs["name"] for call in client.upload_blob.call_args_list]
+            self.assertEqual(names, ["weights/1.0.0/best_ckpt.pth", "weights/1.0.0/lis_yolox.onnx",
+                                     "weights/1.0.0/metrics.json", "weights/1.0.0/model_card.md"])
+            self.assertTrue(all(not call.kwargs["overwrite"] for call in client.upload_blob.call_args_list))
+
     def test_find_next_version(self):
         blobs = [
             "weights/1.0.0/best_ckpt.pth",

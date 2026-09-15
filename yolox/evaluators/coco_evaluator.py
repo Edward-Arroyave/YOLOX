@@ -253,6 +253,7 @@ class COCOEvaluator:
         return data_list
 
     def evaluate_prediction(self, data_dict, statistics):
+        self.last_metrics = {}
         if not is_main_process():
             return 0, 0, None
 
@@ -277,6 +278,7 @@ class COCOEvaluator:
             ]
         )
 
+        self.last_metrics = {"inference_ms": (a_infer_time + a_nms_time) if inference_time > 0 else None}
         info = time_info + "\n"
 
         # Evaluate the Dt (detection) json comparing with the ground truth
@@ -306,6 +308,23 @@ class COCOEvaluator:
             info += redirect_string.getvalue()
             cat_ids = list(cocoGt.cats.keys())
             cat_names = [cocoGt.cats[catId]['name'] for catId in sorted(cat_ids)]
+            from yolox.model_card import number
+            self.last_metrics.update({
+                "map_50_95": number(cocoEval.stats[0]),
+                "ap50": number(cocoEval.stats[1]),
+                "ap75": number(cocoEval.stats[2]),
+                "average_recall": number(cocoEval.stats[8]),
+                "per_class": {},
+            })
+            for idx, name in enumerate(cat_names):
+                values = {}
+                for key, enabled, array in (
+                    ("ap", self.per_class_AP, cocoEval.eval["precision"][:, :, idx, 0, -1]),
+                    ("ar", self.per_class_AR, cocoEval.eval["recall"][:, idx, 0, -1]),
+                ):
+                    valid = array[array > -1]
+                    values[key] = number(np.mean(valid)) if enabled and valid.size else None
+                self.last_metrics["per_class"][name] = values
             if self.per_class_AP:
                 AP_table = per_class_AP_table(cocoEval, class_names=cat_names)
                 info += "per class AP:\n" + AP_table + "\n"

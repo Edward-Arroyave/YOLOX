@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # Copyright (c) Megvii, Inc. and its affiliates.
 
+import copy
+import json
+from pathlib import Path
+from uuid import uuid4
+
 import datetime
 import os
 import time
@@ -56,6 +61,10 @@ class Trainer:
         self.data_type = torch.float16 if args.fp16 else torch.float32
         self.input_size = exp.input_size
         self.best_ap = 0
+        self.card_best = None
+        self.card_evaluations = []
+        self.card_base = None
+        self.card_started = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
         # metric record
         self.meter = MeterBuffer(window_size=exp.print_interval)
@@ -75,6 +84,8 @@ class Trainer:
         self.before_train()
         try:
             self.train_in_epoch()
+            if self.rank == 0:
+                self.write_model_card()
         except Exception as e:
             logger.error("Exception in training: ", e)
             raise
@@ -121,6 +132,11 @@ class Trainer:
             param_group["lr"] = lr
 
         iter_end_time = time.time()
+        if self.rank == 0:
+            for key, value in outputs.items():
+                if "loss" in key:
+                    self.card_loss_sums[key] = self.card_loss_sums.get(key, 0.0) + float(value.detach().item())
+            self.card_loss_count += 1
         self.meter.update(
             iter_time=iter_end_time - iter_start_time,
             data_time=data_end_time - iter_start_time,
@@ -215,6 +231,8 @@ class Trainer:
                                                 metadata=metadata)
 
     def before_epoch(self):
+        self.card_loss_sums = {}
+        self.card_loss_count = 0
         logger.info("---> start train epoch{}".format(self.epoch + 1))
 
         if self.epoch + 1 == self.max_epoch - self.exp.no_aug_epochs or self.no_aug:
@@ -321,6 +339,7 @@ class Trainer:
             model.load_state_dict(ckpt["model"])
             self.optimizer.load_state_dict(ckpt["optimizer"])
             self.best_ap = ckpt.pop("best_ap", 0)
+            self.card_best = ckpt.get("model_card_best")
             # resume the training states variables
             start_epoch = (
                 self.args.start_epoch - 1
@@ -337,8 +356,11 @@ class Trainer:
             if self.args.ckpt is not None:
                 logger.info("loading checkpoint for fine tuning")
                 ckpt_file = self.args.ckpt
-                ckpt = torch.load(ckpt_file, map_location=self.device)["model"]
-                model = load_ckpt(model, ckpt)
+                ckpt = torch.load(ckpt_file, map_location=self.device)
+                # Only curr_ap describes this exact checkpoint; best_ap may belong
+                # to a different checkpoint when fine-tuning from latest.
+                self.card_base = {"best": {"map_50_95": ckpt.get("curr_ap")}}
+                model = load_ckpt(model, ckpt["model"])
             self.start_epoch = 0
 
         return model
@@ -356,7 +378,15 @@ class Trainer:
                 evalmodel, self.evaluator, self.is_distributed, return_outputs=True
             )
 
-        update_best_ckpt = ap50_95 > self.best_ap
+        update_best_ckpt = ap50_95 > self.best_ap or (
+            not self.args.resume and self.card_best is None and ap50_95 >= self.best_ap
+        )
+        if self.rank == 0:
+            metrics = copy.deepcopy(getattr(self.evaluator, "last_metrics", {}))
+            metrics.update(epoch=self.epoch + 1, map_50_95=float(ap50_95), ap50=float(ap50))
+            self.card_evaluations.append(metrics)
+            if update_best_ckpt:
+                self.card_best = metrics
         self.best_ap = max(self.best_ap, ap50_95)
 
         if self.rank == 0:
@@ -406,6 +436,7 @@ class Trainer:
                 "optimizer": self.optimizer.state_dict(),
                 "best_ap": self.best_ap,
                 "curr_ap": ap,
+                "model_card_best": self.card_best,
             }
             save_checkpoint(
                 ckpt_state,
@@ -426,3 +457,58 @@ class Trainer:
                         "curr_ap": ap
                     }
                 )
+
+    def write_model_card(self):
+        """Only reached after successful training, using existing evaluation results."""
+        from yolox.model_card import dataset_snapshot, digest, write_report
+
+        exp, args = self.exp, self.args
+        directory = Path(os.getenv("YOLOX_REPORT_DIR") or
+                         str(Path(self.file_name) / "reports" / uuid4().hex))
+        base = self.card_base
+        base_path = os.getenv("YOLOX_BASE_METRICS")
+        if base_path:
+            try:
+                base = json.loads(Path(base_path).read_text(encoding="utf-8"))
+                if not isinstance(base, dict) or base.get("schema_version") != 1:
+                    base = self.card_base
+            except (OSError, ValueError):
+                logger.warning("Base metrics unavailable; comparison will use N/A")
+        keys = ("max_epoch", "input_size", "test_size", "depth", "width", "act",
+                "basic_lr_per_img", "scheduler", "warmup_epochs", "no_aug_epochs",
+                "min_lr_ratio", "momentum", "weight_decay", "ema", "seed",
+                "random_size", "mosaic_prob", "mixup_prob", "enable_mixup",
+                "test_conf", "nmsthre", "eval_interval")
+        try:
+            dataset = dataset_snapshot(exp)
+        except (OSError, ValueError, AttributeError, KeyError, TypeError) as exc:
+            logger.warning("Dataset metadata unavailable: {}", exc)
+            dataset = {"splits": {}, "total_images": None, "identity_complete": False,
+                       "metadata_error": str(exc)}
+        dataset["version"] = os.getenv("YOLOX_DATASET_VERSION")
+        artifacts = {}
+        for name in ("best_ckpt.pth", "latest_ckpt.pth", "train_log.txt"):
+            path = Path(self.file_name) / name
+            artifacts[name] = {"path": str(path), "sha256": digest(path)} if path.is_file() else None
+        if self.card_best is None:
+            artifacts["best_ckpt.pth"] = None
+        report = {
+            "model": {"project": args.experiment_name, "name": exp.exp_name,
+                      "version": os.getenv("YOLOX_MODEL_VERSION", directory.name),
+                      "base_version": os.getenv("YOLOX_BASE_VERSION"),
+                      "initial_checkpoint": args.ckpt, "experiment": args.exp_file,
+                      "architecture": "YOLOX", "best_epoch": (self.card_best or {}).get("epoch")},
+            "training": {**{k: getattr(exp, k, None) for k in keys},
+                         "batch_size": args.batch_size, "fp16": args.fp16,
+                         "started_at": self.card_started, "start_epoch": self.start_epoch + 1,
+                         "learning_rate": exp.basic_lr_per_img * args.batch_size},
+            "hardware": {"gpu": torch.cuda.get_device_name(self.local_rank),
+                         "world_size": get_world_size(), "torch": str(torch.__version__),
+                         "cuda": torch.version.cuda},
+            "dataset": dataset, "best": self.card_best, "evaluations": self.card_evaluations,
+            "losses": {k: v / self.card_loss_count for k, v in getattr(self, "card_loss_sums", {}).items()
+                       if self.card_loss_count},
+            "artifacts": artifacts,
+        }
+        write_report(report, directory, base)
+        logger.info("Model card saved to {}", directory)

@@ -133,8 +133,9 @@ def export_onnx(
 
 def make_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Publica el checkpoint, el ONNX del proyecto y README en Azure."
+        description="Publica el checkpoint, el ONNX, model_card.md y metrics.json en Azure."
     )
+    parser.add_argument("--report-dir", required=True, help="Directorio con model_card.md y metrics.json.")
     parser.add_argument("--ckpt", required=True, help="Ruta del mejor checkpoint .pth")
     parser.add_argument(
         "--exp-file",
@@ -219,8 +220,14 @@ def main() -> int:
         original_blob = combine_prefix(version_prefix, "best_ckpt.pth")
         onnx_name = f"{project}.onnx"
         onnx_blob = combine_prefix(version_prefix, onnx_name)
-        readme_blob = combine_prefix(version_prefix, "README.md")
-        occupied = {original_blob, onnx_blob, readme_blob}.intersection(existing)
+        report_files = []
+        if args.report_dir:
+            for name in ("metrics.json", "model_card.md"):
+                source = Path(args.report_dir) / name
+                if not source.is_file():
+                    raise ValueError(f"No existe el informe: {source}")
+                report_files.append((source, combine_prefix(version_prefix, name)))
+        occupied = {original_blob, onnx_blob, *(b for _, b in report_files)}.intersection(existing)
         if occupied:
             raise ValueError(
                 f"La versión {version} ya contiene pesos; seleccione otra versión"
@@ -230,7 +237,8 @@ def main() -> int:
         print(f"Versión: {version}")
         print(f"Checkpoint: {checkpoint} -> {original_blob}")
         print(f"ONNX: {onnx_blob}")
-        print(f"Informe: {readme_blob}")
+        for _, blob in report_files:
+            print(f"Informe: {blob}")
         if args.dry_run:
             print("Simulación terminada: no se exportó ni subió ningún archivo.")
             return 0
@@ -249,45 +257,6 @@ def main() -> int:
             if not onnx_file.is_file() or onnx_file.stat().st_size == 0:
                 raise RuntimeError("La exportación no generó un archivo ONNX válido")
 
-            from datetime import datetime, timezone
-
-            readme_file = Path(directory) / "README.md"
-            metadata = checkpoint_metadata(checkpoint)
-            metadata_lines = [
-                f"- Época guardada: `{metadata.get('start_epoch', 'no disponible')}`",
-                f"- Mejor AP: `{metadata.get('best_ap', 'no disponible')}`",
-                f"- AP actual: `{metadata.get('curr_ap', 'no disponible')}`",
-            ]
-            readme_file.write_text(
-                "\n".join(
-                    [
-                        f"# Modelo {args.project} {version}",
-                        "",
-                        f"- Proyecto: `{args.project}`",
-                        f"- Versión: `{version}`",
-                        f"- Modelo base: `{args.base_version}`",
-                        f"- Dataset: `{args.dataset_folder}`",
-                        f"- Experimento: `{exp_file}`",
-                        f"- GPU utilizadas: `{args.devices}`",
-                        f"- Batch size: `{args.batch_size}`",
-                        f"- FP16: `{args.fp16}`",
-                        f"- Publicado UTC: `{datetime.now(timezone.utc).isoformat()}`",
-                        f"- Tamaño PTH: `{checkpoint.stat().st_size}` bytes",
-                        f"- Tamaño ONNX: `{onnx_file.stat().st_size}` bytes",
-                        f"- SHA-256 PTH: `{sha256_file(checkpoint)}`",
-                        f"- SHA-256 ONNX: `{sha256_file(onnx_file)}`",
-                        *metadata_lines,
-                        "",
-                        "## Archivos",
-                        "",
-                        "- `best_ckpt.pth`: checkpoint original de YOLOX.",
-                        f"- `{onnx_name}`: modelo exportado para inferencia.",
-                        "",
-                    ]
-                ),
-                encoding="utf-8",
-            )
-
             print("Subiendo pesos e informe a Azure...")
             uploaded = []
             try:
@@ -295,8 +264,9 @@ def main() -> int:
                 uploaded.append(original_blob)
                 upload_file(client, onnx_file, onnx_blob)
                 uploaded.append(onnx_blob)
-                upload_file(client, readme_file, readme_blob)
-                uploaded.append(readme_blob)
+                for source, blob in report_files:
+                    upload_file(client, source, blob)
+                    uploaded.append(blob)
             except Exception:
                 for blob_name in uploaded:
                     client.delete_blob(blob_name)
