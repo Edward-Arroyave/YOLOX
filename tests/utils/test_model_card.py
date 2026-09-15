@@ -9,6 +9,31 @@ from yolox.model_card import comparison, dataset_snapshot, write_report
 
 
 class TestModelCard(unittest.TestCase):
+    def test_training_losses_accept_tensors_and_disabled_l1_scalar(self):
+        tree = ast.parse(Path("yolox/core/trainer.py").read_text())
+        trainer = next(n for n in tree.body if isinstance(n, ast.ClassDef))
+        method = next(n for n in trainer.body if isinstance(n, ast.FunctionDef)
+                      and n.name == "record_training_losses")
+        namespace = {}
+        exec(compile(ast.Module(body=[method], type_ignores=[]), "trainer.py", "exec"), namespace)
+
+        class Tensor:
+            def __init__(self, value):
+                self.value = value
+
+            def detach(self):
+                return self
+
+            def item(self):
+                return self.value
+
+        fake = SimpleNamespace(card_loss_sums={}, card_loss_count=0)
+        record = namespace["record_training_losses"]
+        record(fake, {"total_loss": Tensor(.5), "l1_loss": 0.0, "num_fg": 4})
+        record(fake, {"total_loss": Tensor(.25), "l1_loss": Tensor(.125)})
+        self.assertEqual(fake.card_loss_sums, {"total_loss": .75, "l1_loss": .125})
+        self.assertEqual(fake.card_loss_count, 2)
+
     def test_dataset_identity_and_test_alias(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

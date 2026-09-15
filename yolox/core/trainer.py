@@ -133,16 +133,21 @@ class Trainer:
 
         iter_end_time = time.time()
         if self.rank == 0:
-            for key, value in outputs.items():
-                if "loss" in key:
-                    self.card_loss_sums[key] = self.card_loss_sums.get(key, 0.0) + float(value.detach().item())
-            self.card_loss_count += 1
+            self.record_training_losses(outputs)
         self.meter.update(
             iter_time=iter_end_time - iter_start_time,
             data_time=data_end_time - iter_start_time,
             lr=lr,
             **outputs,
         )
+
+    def record_training_losses(self, outputs):
+        for key, value in outputs.items():
+            if "loss" in key:
+                # L1 loss is a Python scalar while the L1 branch is disabled.
+                scalar = value.detach().item() if hasattr(value, "detach") else value
+                self.card_loss_sums[key] = self.card_loss_sums.get(key, 0.0) + float(scalar)
+        self.card_loss_count += 1
 
     def before_train(self):
         logger.info("args: {}".format(self.args))
