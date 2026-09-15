@@ -11,8 +11,11 @@ from yolox.model_report_html import render_html
 
 class TestModelCard(unittest.TestCase):
     def test_html_curves_escape_and_missing_history(self):
-        report = {"model": {"project": "<script>alert(1)</script>"},
-                  "best": {"epoch": 2}, "dataset": {},
+        report = {"model": {"project": "<script>alert(1)</script>", "version": "1.0.1",
+                            "base_version": "1.0.0"},
+                  "best": {"epoch": 2, "map_50_95": .6}, "dataset": {},
+                  "comparison": {"same_validation": False,
+                                "metrics": {"map_50_95": {"base": .5, "new": .6, "difference": .1}}},
                   "evaluations": [{"epoch": 1, "map_50_95": .5},
                                   {"epoch": 2, "map_50_95": .6}],
                   "training_history": [{"epoch": 1, "total_loss": .8, "iou_loss": .3,
@@ -21,13 +24,23 @@ class TestModelCard(unittest.TestCase):
                                         "learning_rate": .0001}]}
         html = render_html(report)
         self.assertEqual(html.count('<svg '), 4)
-        self.assertIn('época 2: 0.6', html)
-        self.assertIn('No se puede concluir', html)
+        self.assertIn('época 2: 60.00%', html)
+        self.assertIn('comparación es histórica', html)
         self.assertNotIn('<script>', html)
         self.assertIn('&lt;script&gt;', html)
         self.assertNotIn('https://', html)
         report.pop('training_history')
         self.assertEqual(render_html(report).count('No hay historial disponible'), 3)
+
+    def test_no_base_comparison_skips_validation_warning(self):
+        # A first-ever model (no base at all) must not warn about an unverified
+        # comparison, since no comparison is actually being shown.
+        report = {"model": {"project": "demo"}, "best": {"epoch": 1}, "dataset": {},
+                  "comparison": {"same_validation": False, "metrics": {}},
+                  "evaluations": [], "training_history": []}
+        html = render_html(report)
+        self.assertNotIn('comparación es histórica', html)
+        self.assertIn('primer modelo', html)
 
     def test_training_losses_accept_tensors_and_disabled_l1_scalar(self):
         tree = ast.parse(Path("yolox/core/trainer.py").read_text())
