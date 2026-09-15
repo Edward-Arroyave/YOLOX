@@ -6,9 +6,29 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from yolox.model_card import comparison, dataset_snapshot, write_report
+from yolox.model_report_html import render_html
 
 
 class TestModelCard(unittest.TestCase):
+    def test_html_curves_escape_and_missing_history(self):
+        report = {"model": {"project": "<script>alert(1)</script>"},
+                  "best": {"epoch": 2}, "dataset": {},
+                  "evaluations": [{"epoch": 1, "map_50_95": .5},
+                                  {"epoch": 2, "map_50_95": .6}],
+                  "training_history": [{"epoch": 1, "total_loss": .8, "iou_loss": .3,
+                                        "learning_rate": .001},
+                                       {"epoch": 2, "total_loss": .4, "iou_loss": .2,
+                                        "learning_rate": .0001}]}
+        html = render_html(report)
+        self.assertEqual(html.count('<svg '), 4)
+        self.assertIn('época 2: 0.6', html)
+        self.assertIn('No se puede concluir', html)
+        self.assertNotIn('<script>', html)
+        self.assertIn('&lt;script&gt;', html)
+        self.assertNotIn('https://', html)
+        report.pop('training_history')
+        self.assertEqual(render_html(report).count('No hay historial disponible'), 3)
+
     def test_training_losses_accept_tensors_and_disabled_l1_scalar(self):
         tree = ast.parse(Path("yolox/core/trainer.py").read_text())
         trainer = next(n for n in tree.body if isinstance(n, ast.ClassDef))
@@ -69,7 +89,7 @@ class TestModelCard(unittest.TestCase):
             write_report(report, tmp)
             saved = json.loads((Path(tmp) / "metrics.json").read_text())
             self.assertEqual(saved["comparison"]["metrics"]["map_50_95"]["new"], .8)
-            self.assertIn("N/A", (Path(tmp) / "model_card.md").read_text(encoding="utf-8"))
+            self.assertIn("N/A", (Path(tmp) / "model_report.html").read_text(encoding="utf-8"))
             with self.assertRaises(FileExistsError):
                 write_report(report, tmp)
 

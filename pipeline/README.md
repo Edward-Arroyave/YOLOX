@@ -10,7 +10,7 @@ del ONNX: `vet_yolox` o `lis_yolox`. Ambos usan la misma configuración `.env`.
 3. Limpia el dataset local y descarga el lote configurado.
 4. Entrena usando el último checkpoint como base de *fine-tuning*.
 5. Exporta el nuevo mejor checkpoint a ONNX.
-6. Calcula la siguiente versión y publica `.pth`, `.onnx`, `model_card.md` y `metrics.json`.
+6. Calcula la siguiente versión y publica `.pth`, `.onnx`, `model_report.html` y `metrics.json`.
 7. Elimina las imágenes y los pesos locales después de una publicación exitosa.
 
 Si falla una etapa, las siguientes no se ejecutan y se conservan los archivos
@@ -92,12 +92,12 @@ Opciones de conservación:
 weights/1.0.1/
 ├── best_ckpt.pth
 ├── vet_yolox.onnx
-└── model_card.md + metrics.json
+└── model_report.html + metrics.json
 
 <prefijo-lis>/1.0.0/
 ├── best_ckpt.pth
 ├── lis_yolox.onnx
-└── model_card.md + metrics.json
+└── model_report.html + metrics.json
 ```
 
 La ficha t?cnica publicada registra proyecto, versión, modelo base, dataset,
@@ -127,7 +127,29 @@ vez mediante `TRAIN_BATCH_SIZE` en `exps/cassette/settings.py` y actualmente
 vale `8`.
 # Ficha técnica automática
 
-Cada entrenamiento exitoso genera `metrics.json` y `model_card.md`. La captura
+El informe ahora es un HTML autónomo: `model_report.html`, con curvas vectoriales
+integradas de calidad de validación, pérdida total, componentes de pérdida y
+learning rate. Se abre sin instalar TensorBoard ni acceder a servicios externos;
+también se puede imprimir desde el navegador. Sustituye al Markdown en nuevas
+publicaciones. No necesita imágenes auxiliares ni archivos JavaScript.
+
+`training_history` guarda los promedios de pérdidas por época y el learning rate
+al cierre de cada época. `evaluations` conserva las evaluaciones reales; no se
+interpolan métricas para épocas que no se evaluaron. Estos datos pertenecen a la
+ejecución actual y no se mezclan con eventos antiguos del directorio TensorBoard.
+
+Para convertir las métricas de una versión existente sin entrenar otra vez:
+
+```bash
+python tools/render_model_report.py --metrics /ruta/metrics.json --output /ruta/model_report.html
+```
+
+Los JSON antiguos permiten graficar las evaluaciones guardadas, pero no contienen
+el historial completo de pérdidas: esas curvas aparecerán como no disponibles.
+El comando no modifica ni publica los artefactos anteriores. La ficha HTML nueva
+se publica automáticamente junto a los pesos en el siguiente entrenamiento.
+
+Cada entrenamiento exitoso genera `metrics.json` y `model_report.html`. La captura
 ocurre en el evaluador COCO existente y el documento se escribe después del
 último ciclo de entrenamiento/evaluación, antes de exportar y publicar. No se
 ejecuta otra inferencia ni otra evaluación. También funciona con `tools/train.py`.
@@ -137,7 +159,7 @@ El pipeline guarda cada ejecución en:
 ```text
 YOLOX_outputs/<proyecto>/reports/<versión>/<id-ejecución>/
     metrics.json
-    model_card.md
+    model_report.html
 ```
 
 La limpieza de pesos conserva este historial. Azure recibe ambos archivos en

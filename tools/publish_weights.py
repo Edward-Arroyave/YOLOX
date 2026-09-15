@@ -133,9 +133,9 @@ def export_onnx(
 
 def make_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Publica el checkpoint, el ONNX, model_card.md y metrics.json en Azure."
+        description="Publica el checkpoint, el ONNX, model_report.html y metrics.json en Azure."
     )
-    parser.add_argument("--report-dir", required=True, help="Directorio con model_card.md y metrics.json.")
+    parser.add_argument("--report-dir", required=True, help="Directorio con model_report.html y metrics.json.")
     parser.add_argument("--ckpt", required=True, help="Ruta del mejor checkpoint .pth")
     parser.add_argument(
         "--exp-file",
@@ -222,7 +222,7 @@ def main() -> int:
         onnx_blob = combine_prefix(version_prefix, onnx_name)
         report_files = []
         if args.report_dir:
-            for name in ("metrics.json", "model_card.md"):
+            for name in ("metrics.json", "model_report.html"):
                 source = Path(args.report_dir) / name
                 if not source.is_file():
                     raise ValueError(f"No existe el informe: {source}")

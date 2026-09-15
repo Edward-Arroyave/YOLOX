@@ -63,6 +63,7 @@ class Trainer:
         self.best_ap = 0
         self.card_best = None
         self.card_evaluations = []
+        self.card_training_history = []
         self.card_base = None
         self.card_started = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
@@ -253,6 +254,13 @@ class Trainer:
                 self.save_ckpt(ckpt_name="last_mosaic_epoch")
 
     def after_epoch(self):
+        if self.rank == 0:
+            self.card_training_history.append({
+                "epoch": self.epoch + 1,
+                "learning_rate": self.optimizer.param_groups[0]["lr"],
+                **{k: v / self.card_loss_count for k, v in self.card_loss_sums.items()
+                   if self.card_loss_count},
+            })
         self.save_ckpt(ckpt_name="latest")
 
         if (self.epoch + 1) % self.exp.eval_interval == 0:
@@ -510,6 +518,7 @@ class Trainer:
             "hardware": {"gpu": torch.cuda.get_device_name(self.local_rank),
                          "world_size": get_world_size(), "torch": str(torch.__version__),
                          "cuda": torch.version.cuda},
+            "training_history": self.card_training_history,
             "dataset": dataset, "best": self.card_best, "evaluations": self.card_evaluations,
             "losses": {k: v / self.card_loss_count for k, v in getattr(self, "card_loss_sums", {}).items()
                        if self.card_loss_count},
