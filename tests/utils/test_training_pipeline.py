@@ -1,8 +1,9 @@
 import os
+import io
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 from exps.cassette.settings import TRAIN_BATCH_SIZE
 from pipeline.run_training_pipeline import (
@@ -16,10 +17,55 @@ from pipeline.run_training_pipeline import (
     normalize_model_prefix,
     missing_runtime_dependencies,
     required_env,
+    main,
 )
 
 
 class TestTrainingPipeline(unittest.TestCase):
+    def test_base_selection_matches_training_and_audit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            local = Path(directory) / "yolox_s.pth"
+            local.write_bytes(b"weights")
+            for use_local in (True, False):
+                with self.subTest(local=use_local):
+                    client = MagicMock()
+                    blob = MagicMock()
+                    blob.name = "weights/1.0.2/best_ckpt.pth"
+                    client.list_blobs.return_value = [blob]
+                    argv = ["pipeline", "--prefix", "lis", "--dry-run"]
+                    if use_local:
+                        argv += ["--base-checkpoint", str(local)]
+                    environment = {
+                        "PIPELINE_BLOB_BASE_PREFIX": "training", "PIPELINE_WEIGHTS_PREFIX": "weights",
+                        "AZURE_STORAGE_CONNECTION_STRING": "mock", "AZURE_STORAGE_CONTAINER": "test",
+                    }
+                    with patch.dict(os.environ, environment, clear=True), patch("sys.argv", argv), \
+                         patch("pipeline.run_training_pipeline.load_environment", return_value=None), \
+                         patch("pipeline.run_training_pipeline.create_container_client", return_value=client), \
+                         patch("pipeline.run_training_pipeline.run_stage") as stage, \
+                         patch("sys.stdout", new_callable=io.StringIO) as output:
+                        self.assertEqual(main(), 0)
+                    train = next(c.args for c in stage.call_args_list if c.args[0].startswith("4/6"))
+                    publish = next(c.args for c in stage.call_args_list if c.args[0].startswith("5/6"))
+                    command, env = train[1], train[3]
+                    self.assertEqual(command.count("--ckpt"), 1)
+                    self.assertNotIn("YOLOX_BASE_METRICS", env)
+                    self.assertEqual(env["YOLOX_BASE_VERSION"], "none" if use_local else "1.0.2")
+                    self.assertEqual(publish[1][publish[1].index("--base-version") + 1], env["YOLOX_BASE_VERSION"])
+                    self.assertIn(env["YOLOX_BASE_SOURCE"], output.getvalue())
+                    if use_local:
+                        self.assertEqual(command[command.index("--ckpt") + 1], str(local.resolve()))
+                        self.assertNotIn("best_ckpt.pth ->", output.getvalue())
+
+    def test_hidden_checkpoint_override_is_rejected(self):
+        for extra in ("--ckpt old.pth", "-cold.pth", "--ck=old.pth", "--resume"):
+            with self.subTest(extra=extra), patch.dict(os.environ, {"PIPELINE_TRAIN_ARGS": extra}), \
+                 patch("sys.argv", ["pipeline", "--prefix", "lis", "--dry-run"]), \
+                 patch("pipeline.run_training_pipeline.load_environment", return_value=None), \
+                 patch("sys.stderr", new_callable=io.StringIO) as output:
+                self.assertEqual(main(), 1)
+                self.assertIn("--base-checkpoint", output.getvalue())
+
     def test_shared_batch_size(self):
         self.assertEqual(TRAIN_BATCH_SIZE, 8)
 

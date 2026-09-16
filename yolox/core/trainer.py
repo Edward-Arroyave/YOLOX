@@ -509,6 +509,7 @@ class Trainer:
             "model": {"project": args.experiment_name, "name": exp.exp_name,
                       "version": os.getenv("YOLOX_MODEL_VERSION", directory.name),
                       "base_version": os.getenv("YOLOX_BASE_VERSION"),
+                      "base_source": os.getenv("YOLOX_BASE_SOURCE"),
                       "initial_checkpoint": args.ckpt, "experiment": args.exp_file,
                       "architecture": "YOLOX", "best_epoch": (self.card_best or {}).get("epoch")},
             "training": {**{k: getattr(exp, k, None) for k in keys},

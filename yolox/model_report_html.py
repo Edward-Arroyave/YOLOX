@@ -170,7 +170,9 @@ def executive_summary(report):
     version = fmt(model.get('version'))
     base_version = model.get('base_version')
     sentence1 = f'Se entrenó <strong>{escape(project)} versión {escape(version)}</strong>'
-    if base_version and base_version != 'none':
+    if model.get('base_source'):
+        sentence1 += f' con base <strong>{escape(str(model["base_source"]))}</strong>'
+    elif base_version and base_version != 'none':
         sentence1 += f' a partir del modelo base <strong>{escape(str(base_version))}</strong>'
     else:
         sentence1 += ' como primer modelo publicado de este proyecto (sin modelo base previo)'

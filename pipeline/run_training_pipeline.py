@@ -207,6 +207,10 @@ def make_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--env-file", default=None, help="Archivo .env alternativo.")
     parser.add_argument(
+        "--base-checkpoint", default=None,
+        help="Checkpoint local inicial; reemplaza la última versión publicada como base.",
+    )
+    parser.add_argument(
         "--yes-clean", action="store_true", help="Autoriza limpiar imágenes locales."
     )
     parser.add_argument(
@@ -240,6 +244,21 @@ def main() -> int:
             raise ValueError("No combine --yes-clean con --skip-clean")
         if not args.dry_run and not args.yes_clean and not args.skip_clean:
             raise ValueError("Use --yes-clean para limpiar o --skip-clean para conservar datos")
+
+        extra_train_args = shlex.split(os.getenv("PIPELINE_TRAIN_ARGS", ""))
+        for token in extra_train_args:
+            option = token.split("=", 1)[0]
+            if (option.startswith("-c") and not option.startswith("--")) or (
+                option.startswith("--") and len(option) > 2
+                and any(name.startswith(option) for name in ("--ckpt", "--resume"))
+            ):
+                raise ValueError(
+                    "PIPELINE_TRAIN_ARGS no admite --ckpt/-c ni --resume; "
+                    "use --base-checkpoint para registrar la base real"
+                )
+        local_base = resolve_repo_path(args.base_checkpoint) if args.base_checkpoint else None
+        if local_base and (not local_base.is_file() or local_base.stat().st_size == 0):
+            raise ValueError(f"El checkpoint base no existe o está vacío: {local_base}")
 
         prefix = normalize_model_prefix(args.prefix)
         project = f"{prefix}_yolox"
@@ -301,22 +320,30 @@ def main() -> int:
                 f"La siguiente versión de {project} debe ser {expected_target}; "
                 f"se recibió {target_version}"
             )
-        if latest_version is None and not args.allow_no_base:
+        if latest_version is None and not local_base and not args.allow_no_base:
             raise ValueError(
                 f"No hay un modelo base en {container}/{weights_prefix}/; "
                 "use --allow-no-base solo para el primer modelo"
             )
 
-        base_checkpoint = None
-        if latest_version:
+        base_version = "none" if local_base else (latest_version or "none")
+        base_checkpoint = local_base
+        if latest_version and not local_base:
             base_checkpoint = artifacts_project / latest_version / "best_ckpt.pth"
+
+        base_description = (
+            f"archivo local: {local_base}" if local_base else
+            f"{container}/{weights_prefix}/{latest_version}/best_ckpt.pth" if latest_version else
+            "ninguno (inicialización aleatoria)"
+        )
 
         report_dir = output_project / "reports" / target_version / uuid4().hex
         base_metrics = base_checkpoint.with_name("metrics.json") if base_checkpoint else None
         child_environment = os.environ.copy()
         child_environment["YOLOX_REPORT_DIR"] = str(report_dir)
         child_environment["YOLOX_MODEL_VERSION"] = target_version
-        child_environment["YOLOX_BASE_VERSION"] = latest_version or "none"
+        child_environment["YOLOX_BASE_VERSION"] = base_version
+        child_environment["YOLOX_BASE_SOURCE"] = base_description
         child_environment["YOLOX_DATASET_VERSION"] = dataset_folder
         child_environment.pop("YOLOX_BASE_METRICS", None)
         child_environment["YOLOX_DATA_DIR"] = str(data_dir)
@@ -349,9 +376,8 @@ def main() -> int:
             train_command.extend(["--ckpt", str(base_checkpoint)])
         if fp16:
             train_command.append("--fp16")
-        extra_train_args = os.getenv("PIPELINE_TRAIN_ARGS", "").strip()
         if extra_train_args:
-            train_command.extend(shlex.split(extra_train_args))
+            train_command.extend(extra_train_args)
         train_command.extend(["output_dir", str(output_dir)])
 
         publish_command = [
@@ -371,7 +397,7 @@ def main() -> int:
             "--project",
             project,
             "--base-version",
-            latest_version or "none",
+            base_version,
             "--dataset-folder",
             dataset_folder,
             "--devices",
@@ -389,15 +415,17 @@ def main() -> int:
         print("Pipeline configurado:")
         print(f"  Prefijo: {prefix}")
         print(f"  Proyecto: {project}")
-        print(f"  Modelo base: {latest_version or 'ninguno'}")
+        print(f"  Modelo base: {base_description}")
         print(f"  Última versión en {weights_prefix}/: {latest_version or 'ninguna'}")
         print(f"  Nueva versión: {target_version}")
         print(f"  Dataset: {container}/{blob_base_prefix}/{dataset_folder}/")
         print(f"  Dataset local: {data_dir}")
         print(f"  Publicación: {container}/{weights_prefix}/{target_version}/")
 
-        print("\n=== 1/6 Obtener último modelo base ===", flush=True)
-        if base_checkpoint:
+        print("\n=== 1/6 Preparar modelo base seleccionado ===", flush=True)
+        if local_base:
+            print(f"Checkpoint local: {local_base}")
+        elif base_checkpoint:
             print(f"{weights_prefix}/{latest_version}/best_ckpt.pth -> {base_checkpoint}")
             if not args.dry_run:
                 download_base_checkpoint(client, weights_prefix, latest_version, base_checkpoint)

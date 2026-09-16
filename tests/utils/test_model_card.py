@@ -10,6 +10,11 @@ from yolox.model_report_html import render_html
 
 
 class TestModelCard(unittest.TestCase):
+    def test_local_base_is_shown_in_report(self):
+        html = render_html({"model": {"base_version": "none", "base_source": "archivo local: /weights/yolox_s.pth"}})
+        self.assertIn("archivo local: /weights/yolox_s.pth", html)
+        self.assertNotIn("como primer modelo publicado", html)
+
     def test_html_curves_escape_and_missing_history(self):
         report = {"model": {"project": "<script>alert(1)</script>", "version": "1.0.1",
                             "base_version": "1.0.0"},
