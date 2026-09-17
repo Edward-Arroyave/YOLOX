@@ -462,6 +462,14 @@ def main() -> int:
                 if not (report_dir / name).is_file():
                     raise RuntimeError(f"No se gener? {report_dir / name}")
 
+        test_command = [sys.executable, "tools/evaluate_test.py", "--exp-file", str(exp_file),
+                        "--ckpt", str(checkpoint), "--report-dir", str(report_dir),
+                        "--batch-size", str(batch_size)]
+        if base_checkpoint:
+            test_command.extend(["--base-checkpoint", str(base_checkpoint)])
+        if fp16:
+            test_command.append("--fp16")
+        run_stage("Evaluar modelo base y nuevo en test", test_command, args.dry_run, child_environment)
         run_stage("5/6 Exportar y publicar", publish_command, args.dry_run, child_environment)
 
         print("\n=== 6/6 Limpiar artefactos locales ===", flush=True)

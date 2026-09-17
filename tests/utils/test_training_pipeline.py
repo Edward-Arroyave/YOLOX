@@ -47,6 +47,11 @@ class TestTrainingPipeline(unittest.TestCase):
                         self.assertEqual(main(), 0)
                     train = next(c.args for c in stage.call_args_list if c.args[0].startswith("4/6"))
                     publish = next(c.args for c in stage.call_args_list if c.args[0].startswith("5/6"))
+                    test = next(c.args for c in stage.call_args_list if c.args[0].startswith("Evaluar modelo"))
+                    self.assertEqual(test[1][test[1].index("--base-checkpoint") + 1],
+                                     train[1][train[1].index("--ckpt") + 1])
+                    stages = [c.args[0] for c in stage.call_args_list]
+                    self.assertLess(stages.index(test[0]), stages.index(publish[0]))
                     command, env = train[1], train[3]
                     self.assertEqual(command.count("--ckpt"), 1)
                     self.assertNotIn("YOLOX_BASE_METRICS", env)

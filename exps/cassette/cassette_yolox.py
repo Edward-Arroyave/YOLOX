@@ -20,7 +20,7 @@ class Exp(MyExp):
     def __init__(self):
         super().__init__()
 
-        self.num_classes = 2
+        self.num_classes = 3
 
         self.depth = 0.33
         self.width = 0.50
@@ -63,11 +63,11 @@ class Exp(MyExp):
         self.data_dir = os.getenv("YOLOX_DATA_DIR", "datasets/COCO")
         self.train_image_dir = "training/images"
         self.val_image_dir = "val/images"
-        self.test_image_dir = "val/images"
+        self.test_image_dir = "test/images"
         self.annotations_dir = "."
         self.train_ann = "training/annotations/annotations.json"
         self.val_ann = "val/annotations/annotations.json"
-        self.test_ann = "val/annotations/annotations.json"
+        self.test_ann = "test/annotations/annotations.json"
         self.data_num_workers = 2
 
         self.exp_name = "cassette_yolox"

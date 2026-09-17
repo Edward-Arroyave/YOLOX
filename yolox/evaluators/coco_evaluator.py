@@ -6,7 +6,6 @@ import contextlib
 import io
 import itertools
 import json
-import tempfile
 import time
 from collections import ChainMap, defaultdict
 from loguru import logger
@@ -282,16 +281,20 @@ class COCOEvaluator:
         info = time_info + "\n"
 
         # Evaluate the Dt (detection) json comparing with the ground truth
-        if len(data_dict) > 0:
+        if len(self.dataloader.dataset.coco.getImgIds()) > 0:
             cocoGt = self.dataloader.dataset.coco
             # TODO: since pycocotools can't process dict in py36, write data to json file.
             if self.testdev:
                 json.dump(data_dict, open("./yolox_testdev_2017.json", "w"))
                 cocoDt = cocoGt.loadRes("./yolox_testdev_2017.json")
+            elif data_dict:
+                cocoDt = cocoGt.loadRes(data_dict)
             else:
-                _, tmp = tempfile.mkstemp()
-                json.dump(data_dict, open(tmp, "w"))
-                cocoDt = cocoGt.loadRes(tmp)
+                from pycocotools.coco import COCO
+                cocoDt = COCO()
+                cocoDt.dataset = {"images": list(cocoGt.imgs.values()),
+                                  "categories": list(cocoGt.cats.values()), "annotations": []}
+                cocoDt.createIndex()
             try:
                 from yolox.layers import COCOeval_opt as COCOeval
             except ImportError:
@@ -316,6 +319,10 @@ class COCOEvaluator:
                 "average_recall": number(cocoEval.stats[8]),
                 "per_class": {},
             })
+            for key, index in (("ap_small", 3), ("ap_medium", 4), ("ap_large", 5),
+                               ("ar_1", 6), ("ar_10", 7), ("ar_small", 9),
+                               ("ar_medium", 10), ("ar_large", 11)):
+                self.last_metrics[key] = number(cocoEval.stats[index])
             for idx, name in enumerate(cat_names):
                 values = {}
                 for key, enabled, array in (

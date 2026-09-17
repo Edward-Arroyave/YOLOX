@@ -281,6 +281,39 @@ def chart(title, records, keys, unit, best_epoch=None, explanation=None,
     return head + ''.join(svg) + f'<div class="legend">{legend}</div></section>'
 
 
+def render_test_section(report):
+    result = report.get('test_evaluation')
+    if not result:
+        return ''
+    body = ['<h2>Evaluación final en test · modelo base vs nuevo</h2>']
+    if result.get('status') != 'completed':
+        return ''.join(body) + '<p>' + fmt(result.get('reason')) + '</p>'
+    body.append('<p>Ambos checkpoints se evalúan sobre las mismas imágenes y anotaciones, con la misma '
+                'configuración. Test no interviene en el entrenamiento ni en la selección del mejor checkpoint. '
+                'AP y AR: escala 0–1; diferencia = nuevo − base. En latencia (ms), menor es mejor; en FPS, mayor es mejor.</p>')
+    if not result.get('base'):
+        body.append('<p>No hay checkpoint base; se muestran únicamente resultados del nuevo.</p>')
+    overlap = result.get('overlap_images', {})
+    body.append(table(['Imágenes test también presentes en', 'Cantidad'], overlap.items()))
+    if any(overlap.values()):
+        body.append('<p class="notice">Hay imágenes compartidas con train/val: test no es un conjunto '
+                    'independiente y sus resultados pueden ser optimistas.</p>')
+    body.append('<p>La independencia respecto de datasets históricos del modelo base no está verificada.</p>')
+    body.append(compare_bars(result.get('metrics', {})))
+    body.append(table(['Métrica', 'Base', 'Nuevo', 'Diferencia'],
+                      [(key, row.get('base'), row.get('new'), row.get('difference'))
+                       for key, row in result.get('metrics', {}).items()]))
+    rows = []
+    for name, values in (result.get('new') or {}).get('per_class', {}).items():
+        old = (result.get('base') or {}).get('per_class', {}).get(name, {})
+        for key in ('ap', 'ar'):
+            a, b = old.get(key), values.get(key)
+            rows.append((name, key.upper(), a, b, b - a if a is not None and b is not None else None))
+    body.append(table(['Clase', 'Métrica', 'Base', 'Nuevo', 'Diferencia'], rows))
+    body.append(table(['Condiciones de evaluación', 'Valor'], result.get('settings', {}).items()))
+    return ''.join(body)
+
+
 def render_html(report):
     model, best = report.get('model', {}), report.get('best') or {}
     comp = report.get('comparison', {})
@@ -305,6 +338,7 @@ def render_html(report):
              '(azul) en la misma métrica; barras más largas son mejores.</p>',
              compare_bars(metrics)]
 
+    body.append(render_test_section(report))
     body += ['<h2>Curvas del entrenamiento</h2>',
              '<p class="explain">Cada gráfica muestra la evolución de un indicador a lo largo de las épocas. '
              'La línea vertical gris marca la época del mejor resultado. Pasa el cursor sobre cualquier punto '
