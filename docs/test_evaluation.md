@@ -12,9 +12,15 @@ training y val. Test se reserva para evaluar al terminar: no selecciona checkpoi
 
 Antes de exportar y publicar, el pipeline carga estrictamente el checkpoint base
 seleccionado y el nuevo `best_ckpt.pth`, y evalúa ambos con las mismas condiciones.
-Una arquitectura incompatible detiene la publicación; no se evalúan capas cargadas
-parcialmente. Sin base se evalúa solo el nuevo. Sin carpeta test se registra el motivo;
-con test presente pero inválido o con imágenes faltantes se detiene el pipeline.
+Una arquitectura incompatible hace fallar la comparación; no se evalúan capas cargadas
+parcialmente. Sin base se evalúa solo el nuevo. Sin carpeta test se registra el motivo.
+Si test es inválido, faltan imágenes o falla la evaluación/comparación, se registra
+`test_evaluation.status = "failed"` y el motivo en JSON y HTML. El pipeline continúa
+la exportación y publicación del mejor checkpoint de validación y del reporte de
+entrenamiento, y conserva los pesos locales incluso sin `--keep-local-weights`.
+La herramienta `evaluate_test.py` devuelve un error; el pipeline trata esa etapa
+como no bloqueante. Los fallos de entrenamiento, exportación o publicación siguen
+deteniendo el flujo sin limpiar los pesos locales.
 
 `metrics.json`, en `test_evaluation`, y el HTML publicado incluyen mAP 50:95,
 AP50, AP75, AP por tamaño, AR con 1/10/100 detecciones, AR por tamaño, AP/AR por

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 import os
 import re
 import shlex
@@ -146,6 +147,27 @@ def find_latest_version(blob_names: list[str], weights_prefix: str) -> str | Non
         if match:
             versions.append(tuple(int(part) for part in match.groups()))
     return format_version(max(versions)) if versions else None
+
+
+def record_test_failure(report_dir: Path, error: Exception) -> None:
+    """Keep training metrics and make a failed optional evaluation explicit."""
+    from yolox.model_report_html import render_html
+
+    report = json.loads((report_dir / "metrics.json").read_text(encoding="utf-8"))
+    if report.get("test_evaluation", {}).get("status") == "failed":
+        return
+    report["test_evaluation"] = {
+        "status": "failed",
+        "reason": str(error),
+    }
+    outputs = {
+        "metrics.json": json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False),
+        "model_report.html": render_html(report),
+    }
+    for name, content in outputs.items():
+        temporary = report_dir / (name + ".tmp")
+        temporary.write_text(content, encoding="utf-8")
+        temporary.replace(report_dir / name)
 
 
 def download_base_checkpoint(
@@ -469,7 +491,18 @@ def main() -> int:
             test_command.extend(["--base-checkpoint", str(base_checkpoint)])
         if fp16:
             test_command.append("--fp16")
-        run_stage("Evaluar modelo base y nuevo en test", test_command, args.dry_run, child_environment)
+        test_failed = False
+        try:
+            run_stage("Evaluar modelo base y nuevo en test", test_command, args.dry_run, child_environment)
+        except (subprocess.CalledProcessError, OSError) as exc:
+            test_failed = True
+            record_test_failure(report_dir, exc)
+            print(
+                "ADVERTENCIA: falló la evaluación/comparación de test. "
+                "Se publicarán los pesos y el reporte del entrenamiento; "
+                "se conservarán los pesos locales.",
+                file=sys.stderr,
+            )
         run_stage("5/6 Exportar y publicar", publish_command, args.dry_run, child_environment)
 
         print("\n=== 6/6 Limpiar artefactos locales ===", flush=True)
@@ -478,13 +511,14 @@ def main() -> int:
         else:
             if not args.skip_clean:
                 subprocess.run(clean_command, cwd=REPOSITORY_ROOT, env=child_environment, check=True)
-            if not args.keep_local_weights:
+            if not args.keep_local_weights and not test_failed:
                 deleted = clean_local_weights(output_project, artifacts_project)
                 print(f"Pesos locales eliminados: {deleted}")
             else:
-                print("Pesos locales conservados por --keep-local-weights.")
+                print("Pesos locales conservados por --keep-local-weights o fallo de evaluación.")
 
-        print("\nPipeline terminado correctamente.")
+        print("\nPipeline terminado con advertencia de evaluación." if test_failed
+              else "\nPipeline terminado correctamente.")
         return 0
     except subprocess.CalledProcessError as exc:
         print(f"ERROR: una etapa falló con código {exc.returncode}; pipeline detenido", file=sys.stderr)

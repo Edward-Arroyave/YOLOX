@@ -3,12 +3,31 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
-from tools.evaluate_test import inspect_test, metric_rows
+from tools.evaluate_test import inspect_test, metric_rows, main
 from yolox.model_report_html import render_test_section
 
 
 class TestHoldoutEvaluation(unittest.TestCase):
+    def test_failure_is_written_before_returning_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            original = {'best': {'map_50_95': 0.6862}, 'dataset': {'version': '9-2026'}}
+            (root / 'metrics.json').write_text(json.dumps(original))
+            exp_module = SimpleNamespace(get_exp=lambda *args: SimpleNamespace())
+            argv = ['evaluate_test', '--exp-file', 'experiment.py', '--ckpt', 'best.pth', '--report-dir', tmp]
+            with patch.dict('sys.modules', {'yolox.exp': exp_module}), \
+                 patch('sys.argv', argv), \
+                 patch('tools.evaluate_test.inspect_test', side_effect=ValueError('class mismatch')):
+                with self.assertRaisesRegex(ValueError, 'class mismatch'):
+                    main()
+            report = json.loads((root / 'metrics.json').read_text(encoding='utf-8'))
+            self.assertEqual(report['best'], original['best'])
+            self.assertEqual(report['dataset'], original['dataset'])
+            self.assertEqual(report['test_evaluation']['status'], 'failed')
+            self.assertIn('class mismatch', (root / 'model_report.html').read_text(encoding='utf-8'))
+
     def test_dataset_detects_holdout_and_content_leakage(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

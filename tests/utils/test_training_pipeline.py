@@ -1,5 +1,7 @@
 import os
 import io
+import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -22,6 +24,49 @@ from pipeline.run_training_pipeline import (
 
 
 class TestTrainingPipeline(unittest.TestCase):
+    def test_failed_test_still_publishes_report_and_keeps_best_weights(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            checkpoint = root / 'lis_yolox' / 'best_ckpt.pth'
+            environment = {
+                'PIPELINE_BLOB_BASE_PREFIX': 'training', 'PIPELINE_WEIGHTS_PREFIX': 'weights',
+                'AZURE_STORAGE_CONNECTION_STRING': 'mock', 'AZURE_STORAGE_CONTAINER': 'test',
+                'PIPELINE_OUTPUT_DIR': directory,
+            }
+            client = MagicMock()
+            client.list_blobs.return_value = []
+            published = []
+
+            def stage(name, command, dry_run, env):
+                report_dir = Path(env['YOLOX_REPORT_DIR'])
+                if name.startswith('4/6'):
+                    report_dir.mkdir(parents=True)
+                    checkpoint.write_bytes(b'best trained weights')
+                    (report_dir / 'metrics.json').write_text(json.dumps({'best': {'map_50_95': 0.6862}}))
+                    (report_dir / 'model_report.html').write_text('training report')
+                elif name.startswith('Evaluar modelo'):
+                    raise subprocess.CalledProcessError(1, command)
+                elif name.startswith('5/6'):
+                    report = json.loads((report_dir / 'metrics.json').read_text(encoding='utf-8'))
+                    self.assertEqual(report['test_evaluation']['status'], 'failed')
+                    self.assertEqual(report['best']['map_50_95'], 0.6862)
+                    self.assertIn('non-zero exit status', (report_dir / 'model_report.html').read_text(encoding='utf-8'))
+                    published.append(command)
+
+            with patch.dict(os.environ, environment, clear=True), \
+                 patch('sys.argv', ['pipeline', '--prefix', 'lis', '--skip-clean', '--allow-no-base']), \
+                 patch('pipeline.run_training_pipeline.load_environment', return_value=None), \
+                 patch('pipeline.run_training_pipeline.missing_runtime_dependencies', return_value=[]), \
+                 patch('pipeline.run_training_pipeline.create_container_client', return_value=client), \
+                 patch('pipeline.run_training_pipeline.run_stage', side_effect=stage), \
+                 patch('pipeline.run_training_pipeline.clean_local_weights') as clean, \
+                 patch('sys.stdout', new_callable=io.StringIO), \
+                 patch('sys.stderr', new_callable=io.StringIO):
+                self.assertEqual(main(), 0)
+            self.assertEqual(len(published), 1)
+            clean.assert_not_called()
+            self.assertEqual(checkpoint.read_bytes(), b'best trained weights')
+
     def test_base_selection_matches_training_and_audit(self):
         with tempfile.TemporaryDirectory() as directory:
             local = Path(directory) / "yolox_s.pth"

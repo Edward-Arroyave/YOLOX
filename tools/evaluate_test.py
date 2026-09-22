@@ -81,18 +81,23 @@ def main():
     for key in ('depth', 'width', 'act', 'test_size', 'test_conf', 'nmsthre'):
         if report.get('training', {}).get(key) is not None:
             setattr(exp, key, report['training'][key])
-    snapshot, overlap = inspect_test(exp)
-    snapshot['version'] = report['dataset'].get('version')
-    report['dataset'] = snapshot
-    result = {'status': 'unavailable', 'reason': 'No se encontró un conjunto test independiente.'}
-    if overlap is not None:
-        results = evaluate_checkpoints(exp, args.ckpt, args.base_checkpoint, args.batch_size, args.fp16)
-        result = {'status': 'completed', **results, 'metrics': metric_rows(results['base'], results['new']),
-                  'overlap_images': overlap, 'annotation_sha256': snapshot['splits']['test']['annotation_sha256'],
-                  'checkpoints': {label: {'path': str(path), 'sha256': digest(path)} if path else None
-                                  for label, path in (('base', args.base_checkpoint), ('new', args.ckpt))},
-                  'settings': {'size': exp.test_size, 'confidence': exp.test_conf, 'nms_iou': exp.nmsthre,
-                               'batch_size': args.batch_size, 'fp16': args.fp16}}
+    failure = None
+    try:
+        snapshot, overlap = inspect_test(exp)
+        snapshot['version'] = report['dataset'].get('version')
+        report['dataset'] = snapshot
+        result = {'status': 'unavailable', 'reason': 'No se encontró un conjunto test independiente.'}
+        if overlap is not None:
+            results = evaluate_checkpoints(exp, args.ckpt, args.base_checkpoint, args.batch_size, args.fp16)
+            result = {'status': 'completed', **results, 'metrics': metric_rows(results['base'], results['new']),
+                      'overlap_images': overlap, 'annotation_sha256': snapshot['splits']['test']['annotation_sha256'],
+                      'checkpoints': {label: {'path': str(path), 'sha256': digest(path)} if path else None
+                                      for label, path in (('base', args.base_checkpoint), ('new', args.ckpt))},
+                      'settings': {'size': exp.test_size, 'confidence': exp.test_conf, 'nms_iou': exp.nmsthre,
+                                   'batch_size': args.batch_size, 'fp16': args.fp16}}
+    except Exception as exc:
+        failure = exc
+        result = {'status': 'failed', 'reason': f'{type(exc).__name__}: {exc}'}
     report['test_evaluation'] = result
     # Finish inference and rendering before replacing either deliverable.
     outputs = {'metrics.json': json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False),
@@ -102,6 +107,8 @@ def main():
         temporary.write_text(content, encoding='utf-8')
         temporary.replace(directory / name)
     print('Evaluación test:', result['status'])
+    if failure is not None:
+        raise failure
 
 
 if __name__ == '__main__':
