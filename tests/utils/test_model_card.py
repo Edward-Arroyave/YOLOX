@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from openpyxl import load_workbook
 
 from yolox.model_card import comparison, dataset_snapshot, write_report
 from yolox.model_report_html import render_html
@@ -108,8 +109,33 @@ class TestModelCard(unittest.TestCase):
             saved = json.loads((Path(tmp) / "metrics.json").read_text())
             self.assertEqual(saved["comparison"]["metrics"]["map_50_95"]["new"], .8)
             self.assertIn("N/A", (Path(tmp) / "model_report.html").read_text(encoding="utf-8"))
+            workbook = load_workbook(Path(tmp) / "model_report.xlsx")
+            self.assertEqual(workbook.sheetnames[-1], "Gráficas")
+            self.assertEqual(workbook["Formato"]["K10"].value, "1.0.1")
             with self.assertRaises(FileExistsError):
                 write_report(report, tmp)
+
+    def test_excel_report_populates_metrics_and_four_charts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            report = {"model": {"project": "Prueba", "name": "Detector", "version": "1.2.3"},
+                      "dataset": {"splits": {"train": {"images": 8}, "val": {"images": 2},
+                                             "test": {"images": 0}}, "total_images": 10},
+                      "training": {"max_epoch": 2, "batch_size": 4},
+                      "best": {"epoch": 2, "map_50_95": 0.6, "ap50": 0.8},
+                      "evaluations": [{"epoch": 1, "map_50_95": 0.4, "ap50": 0.6},
+                                      {"epoch": 2, "map_50_95": 0.6, "ap50": 0.8}],
+                      "training_history": [{"epoch": 1, "total_loss": 2, "iou_loss": 1,
+                                            "learning_rate": .01},
+                                           {"epoch": 2, "total_loss": 1, "iou_loss": .5,
+                                            "learning_rate": .001}]}
+            write_report(report, tmp)
+            workbook = load_workbook(Path(tmp) / "model_report.xlsx")
+            self.assertEqual(workbook["Formato"]["C10"].value, "Prueba")
+            self.assertEqual(workbook["Formato"]["G40"].value,
+                             "train: 80.0% / val: 20.0% / test: 0.0%")
+            self.assertEqual(workbook["Formato"]["D70"].value, 0.6)
+            self.assertEqual(len(workbook["Gráficas"]._charts), 4)
+            self.assertEqual(workbook["Control de Cambios"]["C3"].value, "Versión inicial")
 
     def test_failed_training_does_not_generate_card(self):
         # Execute the actual orchestration method without requiring CUDA/PyTorch.

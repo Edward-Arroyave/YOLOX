@@ -480,7 +480,7 @@ def main() -> int:
         print("\n=== Verificar ficha t?cnica del entrenamiento ===", flush=True)
         print(f"Ficha y m?tricas: {report_dir}")
         if not args.dry_run:
-            for name in ("metrics.json", "model_report.html"):
+            for name in ("metrics.json", "model_report.html", "model_report.xlsx"):
                 if not (report_dir / name).is_file():
                     raise RuntimeError(f"No se gener? {report_dir / name}")
 

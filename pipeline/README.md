@@ -149,7 +149,11 @@ el historial completo de pérdidas: esas curvas aparecerán como no disponibles.
 El comando no modifica ni publica los artefactos anteriores. La ficha HTML nueva
 se publica automáticamente junto a los pesos en el siguiente entrenamiento.
 
-Cada entrenamiento exitoso genera `metrics.json` y `model_report.html`. La captura
+Cada entrenamiento exitoso genera `metrics.json`, `model_report.html` y
+`model_report.xlsx`. El Excel usa la plantilla `yolox/templates/training_model_template.xlsx`,
+rellena los datos disponibles en la hoja `Formato` y añade cuatro gráficas editables
+en `Gráficas`. Los datos de responsables, cliente, metas y mantenimiento que no
+registra el entrenamiento quedan para completar manualmente. La captura
 ocurre en el evaluador COCO existente y el documento se escribe después del
 último ciclo de entrenamiento/evaluación, antes de exportar y publicar. No se
 ejecuta otra inferencia ni otra evaluación. También funciona con `tools/train.py`.

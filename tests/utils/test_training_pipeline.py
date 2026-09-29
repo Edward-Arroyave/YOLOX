@@ -44,6 +44,7 @@ class TestTrainingPipeline(unittest.TestCase):
                     checkpoint.write_bytes(b'best trained weights')
                     (report_dir / 'metrics.json').write_text(json.dumps({'best': {'map_50_95': 0.6862}}))
                     (report_dir / 'model_report.html').write_text('training report')
+                    (report_dir / 'model_report.xlsx').write_bytes(b'excel report')
                 elif name.startswith('Evaluar modelo'):
                     raise subprocess.CalledProcessError(1, command)
                 elif name.startswith('5/6'):

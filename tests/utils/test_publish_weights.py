@@ -24,6 +24,7 @@ class TestPublishWeights(unittest.TestCase):
             exp = root / "exp.py"
             exp.write_text("# experiment")
             (root / "model_report.html").write_text("# Model card")
+            (root / "model_report.xlsx").write_bytes(b"excel report")
             (root / "metrics.json").write_text("{}")
             client = MagicMock()
             client.list_blobs.return_value = []
@@ -38,7 +39,8 @@ class TestPublishWeights(unittest.TestCase):
                 self.assertEqual(publish_weights.main(), 0)
             names = [call.kwargs["name"] for call in client.upload_blob.call_args_list]
             self.assertEqual(names, ["weights/1.0.0/best_ckpt.pth", "weights/1.0.0/lis_yolox.onnx",
-                                     "weights/1.0.0/metrics.json", "weights/1.0.0/model_report.html"])
+                                     "weights/1.0.0/metrics.json", "weights/1.0.0/model_report.html",
+                                     "weights/1.0.0/model_report.xlsx"])
             self.assertTrue(all(not call.kwargs["overwrite"] for call in client.upload_blob.call_args_list))
 
     def test_find_next_version(self):

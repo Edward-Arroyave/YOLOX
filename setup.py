@@ -80,6 +80,7 @@ setuptools.setup(
     long_description=get_long_description(),
     long_description_content_type="text/markdown",
     include_package_data=True,  # include files in MANIFEST.in
+    package_data={"yolox": ["templates/*.xlsx"]},
     ext_modules=get_ext_modules(),
     cmdclass=get_cmd_class(),
     classifiers=[
