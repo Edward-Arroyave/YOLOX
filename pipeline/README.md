@@ -149,12 +149,27 @@ el historial completo de pérdidas: esas curvas aparecerán como no disponibles.
 El comando no modifica ni publica los artefactos anteriores. La ficha HTML nueva
 se publica automáticamente junto a los pesos en el siguiente entrenamiento.
 
-Cada entrenamiento exitoso genera `metrics.json`, `model_report.html` y
-`model_report.xlsx`. El Excel usa la plantilla `yolox/templates/training_model_template.xlsx`,
-rellena los datos disponibles en la hoja `Formato` y añade cuatro gráficas editables
-en `Gráficas`. Los datos de responsables, cliente, metas y mantenimiento que no
-registra el entrenamiento quedan para completar manualmente. La captura
-ocurre en el evaluador COCO existente y el documento se escribe después del
+Cada entrenamiento exitoso genera `metrics.json`, `model_report.html`,
+`model_report.md` y `model_report.xlsx`. El Excel usa la plantilla
+`yolox/templates/training_model_template.xlsx` y no añade gráficas. Los campos
+descriptivos y las explicaciones de métricas se leen de `model_report.md`.
+Para cambiar los valores predeterminados de próximas ejecuciones, edite
+`pipeline/ficha_modelo.md`. Los valores de métricas y los datos técnicos de la
+sección 4 se toman directamente del entrenamiento; el Markdown los muestra para
+revisión, pero editarlos allí no modifica el Excel. La meta/umbral se muestra como
+`90 %` en todas las filas. En latencia, ese porcentaje es solo la referencia
+solicitada del formato: el valor medido está en milisegundos.
+
+Después de editar el Markdown de una ejecución, regenere el Excel sin entrenar:
+
+```bash
+python tools/render_model_excel.py --metrics /ruta/metrics.json --markdown /ruta/model_report.md --output /ruta/model_report.xlsx
+```
+
+La generación requiere `openpyxl` en el mismo entorno Python que ejecuta el
+pipeline. Antes de entrenar, el pipeline comprueba esta dependencia. Si falta,
+ejecute `python -m pip install openpyxl==3.1.5` dentro del entorno activo.
+La captura de métricas ocurre en el evaluador COCO existente y el documento se escribe después del
 último ciclo de entrenamiento/evaluación, antes de exportar y publicar. No se
 ejecuta otra inferencia ni otra evaluación. También funciona con `tools/train.py`.
 
@@ -164,6 +179,8 @@ El pipeline guarda cada ejecución en:
 YOLOX_outputs/<proyecto>/reports/<versión>/<id-ejecución>/
     metrics.json
     model_report.html
+    model_report.md
+    model_report.xlsx
 ```
 
 La limpieza de pesos conserva este historial. Azure recibe ambos archivos en

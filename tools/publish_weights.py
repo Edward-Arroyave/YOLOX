@@ -222,7 +222,7 @@ def main() -> int:
         onnx_blob = combine_prefix(version_prefix, onnx_name)
         report_files = []
         if args.report_dir:
-            for name in ("metrics.json", "model_report.html", "model_report.xlsx"):
+            for name in ("metrics.json", "model_report.html", "model_report.md", "model_report.xlsx"):
                 source = Path(args.report_dir) / name
                 if not source.is_file():
                     raise ValueError(f"No existe el informe: {source}")

@@ -44,6 +44,7 @@ class TestTrainingPipeline(unittest.TestCase):
                     checkpoint.write_bytes(b'best trained weights')
                     (report_dir / 'metrics.json').write_text(json.dumps({'best': {'map_50_95': 0.6862}}))
                     (report_dir / 'model_report.html').write_text('training report')
+                    (report_dir / 'model_report.md').write_text('# Ficha')
                     (report_dir / 'model_report.xlsx').write_bytes(b'excel report')
                 elif name.startswith('Evaluar modelo'):
                     raise subprocess.CalledProcessError(1, command)
@@ -167,11 +168,11 @@ class TestTrainingPipeline(unittest.TestCase):
     def test_missing_runtime_dependencies(self):
         with patch(
             "pipeline.run_training_pipeline.importlib.util.find_spec",
-            side_effect=lambda module: None if module in {"thop", "onnxsim"} else object(),
+            side_effect=lambda module: None if module in {"thop", "onnxsim", "openpyxl"} else object(),
         ):
-            self.assertEqual(missing_runtime_dependencies(False), ["thop"])
+            self.assertEqual(missing_runtime_dependencies(False), ["openpyxl", "thop"])
             self.assertEqual(
-                missing_runtime_dependencies(True), ["thop", "onnx-simplifier"]
+                missing_runtime_dependencies(True), ["openpyxl", "thop", "onnx-simplifier"]
             )
 
     def test_find_latest_version(self):

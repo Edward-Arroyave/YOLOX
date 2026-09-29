@@ -110,12 +110,13 @@ class TestModelCard(unittest.TestCase):
             self.assertEqual(saved["comparison"]["metrics"]["map_50_95"]["new"], .8)
             self.assertIn("N/A", (Path(tmp) / "model_report.html").read_text(encoding="utf-8"))
             workbook = load_workbook(Path(tmp) / "model_report.xlsx")
-            self.assertEqual(workbook.sheetnames[-1], "Gráficas")
+            self.assertNotIn("Gráficas", workbook.sheetnames)
+            self.assertTrue((Path(tmp) / "model_report.md").is_file())
             self.assertEqual(workbook["Formato"]["K10"].value, "1.0.1")
             with self.assertRaises(FileExistsError):
                 write_report(report, tmp)
 
-    def test_excel_report_populates_metrics_and_four_charts(self):
+    def test_excel_report_uses_markdown_and_measured_metrics(self):
         with tempfile.TemporaryDirectory() as tmp:
             report = {"model": {"project": "Prueba", "name": "Detector", "version": "1.2.3"},
                       "dataset": {"splits": {"train": {"images": 8}, "val": {"images": 2},
@@ -134,8 +135,24 @@ class TestModelCard(unittest.TestCase):
             self.assertEqual(workbook["Formato"]["G40"].value,
                              "train: 80.0% / val: 20.0% / test: 0.0%")
             self.assertEqual(workbook["Formato"]["D70"].value, 0.6)
-            self.assertEqual(len(workbook["Gráficas"]._charts), 4)
+            self.assertEqual(workbook["Formato"]["F70"].value, "90 %")
+            self.assertIn("umbrales IoU", workbook["Formato"]["H70"].value)
+            self.assertNotIn("Gráficas", workbook.sheetnames)
             self.assertEqual(workbook["Control de Cambios"]["C3"].value, "Versión inicial")
+
+            markdown = Path(tmp) / "model_report.md"
+            content = markdown.read_text(encoding="utf-8")
+            markdown.write_text(content.replace("- cliente:", "- cliente: Clínica Veterinaria")
+                                .replace("- map_50_95: Precisión", "- map_50_95: Calidad personalizada. Precisión"),
+                                encoding="utf-8")
+            from yolox.model_report_excel import write_excel_report
+            report["model"]["experiment"] = "/tmp/entrenamiento.py"
+            write_excel_report(report, Path(tmp) / "model_report.xlsx", markdown)
+            workbook = load_workbook(Path(tmp) / "model_report.xlsx")
+            self.assertEqual(workbook["Formato"]["K14"].value, "Clínica Veterinaria")
+            self.assertIn("Calidad personalizada", workbook["Formato"]["H70"].value)
+            self.assertEqual(workbook["Formato"]["G59"].value, "/tmp/entrenamiento.py")
+            self.assertEqual(workbook["Formato"]["D70"].value, 0.6)
 
     def test_failed_training_does_not_generate_card(self):
         # Execute the actual orchestration method without requiring CUDA/PyTorch.

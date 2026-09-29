@@ -135,11 +135,10 @@ def render(report):
 
 def write_report(report, directory, base=None):
     from yolox.model_report_html import render_html
-    from yolox.model_report_excel import write_excel_report
 
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
-    if any((directory / name).exists() for name in ("metrics.json", "model_report.html", "model_report.xlsx")):
+    if any((directory / name).exists() for name in ("metrics.json", "model_report.html", "model_report.xlsx", "model_report.md")):
         raise FileExistsError(f"Model report already exists in {directory}")
     report["schema_version"] = 1
     report["completed_at"] = datetime.now(timezone.utc).isoformat()
@@ -155,8 +154,11 @@ def write_report(report, directory, base=None):
         if old is not None and new is not None and new > old:
             improvements.append((new - old, name))
     report["comparison"]["class_improvements"] = sorted(improvements, reverse=True)[:3]
-    write_excel_report(report, directory / "model_report.xlsx")
     for name, value in (("metrics.json", json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False)),
                         ("model_report.html", render_html(report))):
         with (directory / name).open("x", encoding="utf-8") as stream:
             stream.write(value)
+    from yolox.model_report_excel import write_excel_report, write_markdown_report
+
+    write_markdown_report(report, directory / "model_report.md")
+    write_excel_report(report, directory / "model_report.xlsx", directory / "model_report.md")
