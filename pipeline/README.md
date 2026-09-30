@@ -1,5 +1,19 @@
 # Pipeline de entrenamiento YOLOX
 
+## Gestión Documental
+
+Configure `DOCUMENT_API_CLIENT_ID` y `DOCUMENT_API_CLIENT_SECRET` en `.env` con
+el par entregado por el administrador de la plataforma. La URL del backend dev
+se configura con `DOCUMENT_API_BASE_URL` y tiene el valor de `.env.example` por
+defecto. El token se solicita en cada publicación y no se guarda en el entorno.
+
+Tras publicar en Azure, el pipeline consulta las categorías, crea la del proyecto
+si falta y sube `model_report.html` y `model_report.xlsx` en una sola llamada.
+`lis_yolox` usa `Pruebas rapidas lis` y `vet_yolox` usa `veterinaria`; los nombres
+están definidos en el código. Los archivos remotos incluyen proyecto y versión
+para evitar colisiones. Si falla la carga documental, el pipeline devuelve error
+y conserva los informes locales.
+
 El pipeline recibe un prefijo (`vet` o `lis`) y deriva el nombre del proyecto y
 del ONNX: `vet_yolox` o `lis_yolox`. Ambos usan la misma configuración `.env`.
 

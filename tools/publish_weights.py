@@ -13,6 +13,11 @@ import tempfile
 from pathlib import Path, PurePosixPath
 
 try:
+    from tools.publish_documents import publish_reports
+except ModuleNotFoundError:  # Ejecución directa: python tools/publish_weights.py
+    from publish_documents import publish_reports
+
+try:
     from tools.ingest_blob_storage import (
         REPOSITORY_ROOT,
         combine_prefix,
@@ -273,6 +278,9 @@ def main() -> int:
                 raise
 
         print(f"Publicación terminada: {container}/{version_prefix}/")
+        if os.getenv("DOCUMENT_API_CLIENT_ID") or os.getenv("DOCUMENT_API_CLIENT_SECRET"):
+            publish_reports(Path(args.report_dir), project, version)
+            print(f"Informes HTML y Excel publicados en Gestión Documental: {project}")
         return 0
     except subprocess.CalledProcessError as exc:
         print(f"ERROR: falló la exportación ONNX (código {exc.returncode})", file=sys.stderr)
