@@ -234,3 +234,11 @@ ejecución. El comando de publicación independiente requiere `--report-dir`.
 El esquema JSON versión 1 separa `model`, `training`, `hardware`, `dataset`,
 `best`, `evaluations`, `losses`, `artifacts`, `base_model` y `comparison`.
 Los valores ausentes se serializan como `null` y se muestran como `N/A`.
+
+## Lanzar desde Vision Label Studio
+
+La app web puede encolar entrenamientos de este pipeline (botón "Entrenar").
+En la VM los ejecuta el agente `pipeline/agent/`, con progreso en vivo
+(`VLS_PROGRESS_FILE`, que escribe el trainer), espera si hay otro
+entrenamiento y apaga la máquina al terminar. Instalación y detalles:
+[`pipeline/agent/README.md`](agent/README.md).

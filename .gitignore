@@ -4,6 +4,8 @@
 # user experiments directory
 YOLOX_outputs/
 .pipeline_artifacts/
+# Vision Label Studio agent: per-run base checkpoint and progress
+.vls_runs/
 datasets/
 # do not ignore datasets under yolox/data
 !*yolox/data/datasets/

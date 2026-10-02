@@ -261,6 +261,7 @@ class Trainer:
                 **{k: v / self.card_loss_count for k, v in self.card_loss_sums.items()
                    if self.card_loss_count},
             })
+            self.write_live_progress()
         self.save_ckpt(ckpt_name="latest")
 
         if (self.epoch + 1) % self.exp.eval_interval == 0:
@@ -400,6 +401,7 @@ class Trainer:
             self.card_evaluations.append(metrics)
             if update_best_ckpt:
                 self.card_best = metrics
+            self.write_live_progress()
         self.best_ap = max(self.best_ap, ap50_95)
 
         if self.rank == 0:
@@ -470,6 +472,19 @@ class Trainer:
                         "curr_ap": ap
                     }
                 )
+
+    def write_live_progress(self):
+        """Vision Label Studio: per-epoch progress for live charts, only if VLS_PROGRESS_FILE is set."""
+        from yolox.training_progress import progress_path, write_progress
+
+        path = progress_path()
+        if path is None:
+            return
+        if not write_progress(path, epoch=self.epoch + 1, max_epoch=self.max_epoch,
+                              training_history=self.card_training_history,
+                              evaluations=self.card_evaluations, best=self.card_best,
+                              started_at=self.card_started):
+            logger.warning("Could not write training progress to {}", path)
 
     def write_model_card(self):
         """Only reached after successful training, using existing evaluation results."""
