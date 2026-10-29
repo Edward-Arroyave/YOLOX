@@ -12,8 +12,13 @@ desde la raíz de este repositorio:
 
 ```
 conda run -n ia-yolox-training python pipeline/run_training_pipeline.py \
-  --prefix lis --dataset-folder <carpeta> --yes-clean [--base-checkpoint <archivo local>]
+  --prefix lis --dataset-folder <carpeta> [--dataset-prefix <prefijo>] --yes-clean   [--base-checkpoint <archivo local>]
 ```
+
+`--dataset-prefix` es el campo `datasetPrefix` de la solicitud: la ruta en Blob
+entre el contenedor y la carpeta del dataset elegido en la app (`""` = raíz del
+contenedor). Las solicitudes sin ese campo no lo envían, y el pipeline usa
+`PIPELINE_BLOB_BASE_PREFIX`.
 
 ## Qué hace
 

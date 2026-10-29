@@ -8,7 +8,8 @@ and starts the machine if it is off. This agent runs as a systemd service of the
 * takes the requests oldest first, one at a time (FIFO);
 * waits, with status ``waiting``, while someone else's training runs on the machine;
 * downloads the chosen base model from Blob and passes it as ``--base-checkpoint``;
-* runs ``conda run -n <env> python pipeline/run_training_pipeline.py --prefix … --dataset-folder … --yes-clean``;
+* runs ``conda run -n <env> python pipeline/run_training_pipeline.py --prefix … --dataset-folder …
+  [--dataset-prefix …] --yes-clean``;
 * uploads the last 200 log lines and ``progress.json`` (written by the trainer through
   ``VLS_PROGRESS_FILE``) every ``VLS_LOG_UPLOAD_SECONDS``;
 * writes the final ``status.json`` with the published version, duration and best metrics;
@@ -98,6 +99,12 @@ def build_command(request, config: AgentConfig, base_checkpoint_path: Path | Non
     script = _relative(request.get("script"), "script")
     if request.get("baseCheckpoint") is not None:
         _relative(request.get("baseCheckpoint"), "baseCheckpoint", ".pth")
+    # VLS spec 027 r8: Blob prefix of the chosen dataset; "" is the container root, absent keeps the .env one.
+    dataset_prefix = request.get("datasetPrefix")
+    if dataset_prefix is not None and dataset_prefix != "":
+        _relative(dataset_prefix, "datasetPrefix")
+    elif dataset_prefix is not None and not isinstance(dataset_prefix, str):
+        raise InvalidRequest("datasetPrefix no válido")
     workdir = request.get("workdir")
     if not isinstance(workdir, str) or ".." in PurePosixPath(workdir).parts:
         raise InvalidRequest("workdir no válido")
@@ -107,7 +114,9 @@ def build_command(request, config: AgentConfig, base_checkpoint_path: Path | Non
     argv = [
         config.conda_exe, "run", "-n", conda_env, "--no-capture-output",
         "python", script,
-        "--prefix", prefix, "--dataset-folder", dataset_folder, "--yes-clean",
+        "--prefix", prefix, "--dataset-folder", dataset_folder,
+        *(["--dataset-prefix", dataset_prefix] if dataset_prefix is not None else []),
+        "--yes-clean",
     ]
     if base_checkpoint_path is not None:
         argv += ["--base-checkpoint", str(base_checkpoint_path)]

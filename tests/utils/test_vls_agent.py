@@ -145,6 +145,32 @@ class BuildCommandTest(AgentTestCase):
                     agent.build_command({**self.request, **change}, self.config)
 
 
+class DatasetPrefixTest(AgentTestCase):
+    """VLS spec 027 r8 (CA-027-29): the app sends the Blob prefix of the chosen dataset."""
+
+    def test_the_dataset_prefix_follows_the_dataset_folder(self):
+        argv, _ = agent.build_command({**self.request, "datasetPrefix": "training_yolox"}, self.config)
+        self.assertEqual(argv[-5:], ["--dataset-folder", "9-2026-segundo-entrenamiento",
+                                     "--dataset-prefix", "training_yolox", "--yes-clean"])
+
+    def test_nested_and_root_prefixes(self):
+        argv, _ = agent.build_command({**self.request, "datasetPrefix": "datasets/lis"}, self.config)
+        self.assertEqual(argv[argv.index("--dataset-prefix") + 1], "datasets/lis")
+        argv, _ = agent.build_command({**self.request, "datasetPrefix": ""}, self.config)
+        self.assertEqual(argv[argv.index("--dataset-prefix") + 1], "")
+
+    def test_older_requests_without_prefix_keep_the_pipeline_default(self):
+        for request in (self.request, {**self.request, "datasetPrefix": None}):
+            argv, _ = agent.build_command(request, self.config)
+            self.assertNotIn("--dataset-prefix", argv)
+
+    def test_rejects_unsafe_prefixes(self):
+        for prefix in ["../x", "/abs", "a b", "a//b", "a/..", "x; rm -rf ~", 7]:
+            with self.subTest(prefix=prefix):
+                with self.assertRaises(agent.InvalidRequest):
+                    agent.build_command({**self.request, "datasetPrefix": prefix}, self.config)
+
+
 class ProcessRunTest(AgentTestCase):
     def test_success_runs_once_publishes_log_progress_and_result(self):
         self.queue()

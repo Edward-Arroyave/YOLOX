@@ -132,7 +132,9 @@ La configuración compartida usa `PIPELINE_BLOB_BASE_PREFIX`,
 `PIPELINE_WEIGHTS_PREFIX` y
 `PIPELINE_EXP_FILE=exps/cassette/cassette_yolox.py`. Tanto `--prefix lis` como
 `--prefix vet` cargan ese mismo experimento. El lote se recibe con
-`--dataset-folder` o se calcula con el mes actual; su ruta local se deriva de
+`--dataset-folder` o se calcula con el mes actual. `--dataset-prefix <ruta>`
+reemplaza `PIPELINE_BLOB_BASE_PREFIX` para esa ejecución (vacío = raíz del
+contenedor); es lo que envía Vision Label Studio. Su ruta local se deriva de
 `AZURE_INGEST_DESTINATION`. La descripción de las variables está en
 `.env.example` y en el README principal.
 

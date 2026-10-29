@@ -323,15 +323,11 @@ class COCOEvaluator:
                                ("ar_1", 6), ("ar_10", 7), ("ar_small", 9),
                                ("ar_medium", 10), ("ar_large", 11)):
                 self.last_metrics[key] = number(cocoEval.stats[index])
-            for idx, name in enumerate(cat_names):
-                values = {}
-                for key, enabled, array in (
-                    ("ap", self.per_class_AP, cocoEval.eval["precision"][:, :, idx, 0, -1]),
-                    ("ar", self.per_class_AR, cocoEval.eval["recall"][:, idx, 0, -1]),
-                ):
-                    valid = array[array > -1]
-                    values[key] = number(np.mean(valid)) if enabled and valid.size else None
-                self.last_metrics["per_class"][name] = values
+            from yolox.class_metrics import per_class_metrics
+            self.last_metrics["per_class"] = per_class_metrics(
+                cocoEval.eval["precision"], cocoEval.eval["recall"], cat_names,
+                ap_enabled=self.per_class_AP, ar_enabled=self.per_class_AR,
+            )
             if self.per_class_AP:
                 AP_table = per_class_AP_table(cocoEval, class_names=cat_names)
                 info += "per class AP:\n" + AP_table + "\n"

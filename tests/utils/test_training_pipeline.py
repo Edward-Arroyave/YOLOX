@@ -109,6 +109,45 @@ class TestTrainingPipeline(unittest.TestCase):
                         self.assertEqual(command[command.index("--ckpt") + 1], str(local.resolve()))
                         self.assertNotIn("best_ckpt.pth ->", output.getvalue())
 
+    def _dry_run(self, extra_argv):
+        client = MagicMock()
+        blob = MagicMock()
+        blob.name = "weights/1.0.2/best_ckpt.pth"
+        client.list_blobs.return_value = [blob]
+        environment = {
+            "PIPELINE_BLOB_BASE_PREFIX": "training", "PIPELINE_WEIGHTS_PREFIX": "weights",
+            "AZURE_STORAGE_CONNECTION_STRING": "mock", "AZURE_STORAGE_CONTAINER": "yolox",
+        }
+        argv = ["pipeline", "--prefix", "lis", "--dataset-folder", "9-2026", "--dry-run", *extra_argv]
+        with patch.dict(os.environ, environment, clear=True), patch("sys.argv", argv),              patch("pipeline.run_training_pipeline.load_environment", return_value=None),              patch("pipeline.run_training_pipeline.create_container_client", return_value=client),              patch("pipeline.run_training_pipeline.run_stage") as stage,              patch("sys.stdout", new_callable=io.StringIO), patch("sys.stderr", new_callable=io.StringIO):
+            code = main()
+        return code, stage
+
+    def _ingest_base_prefix(self, stage):
+        ingest = next(c.args[1] for c in stage.call_args_list if c.args[0].startswith("3/6"))
+        return ingest[ingest.index("--base-prefix") + 1]
+
+    def test_dataset_prefix_replaces_the_env_base_prefix(self):
+        # VLS spec 027 r8 (CA-027-30): the app sends the Blob prefix of the chosen dataset.
+        code, stage = self._dry_run(["--dataset-prefix", "datasets/lis"])
+        self.assertEqual(code, 0)
+        self.assertEqual(self._ingest_base_prefix(stage), "datasets/lis")
+        code, stage = self._dry_run(["--dataset-prefix", ""])
+        self.assertEqual(code, 0)
+        self.assertEqual(self._ingest_base_prefix(stage), "")
+
+    def test_without_dataset_prefix_the_env_base_prefix_is_used(self):
+        code, stage = self._dry_run([])
+        self.assertEqual(code, 0)
+        self.assertEqual(self._ingest_base_prefix(stage), "training")
+
+    def test_unsafe_dataset_prefix_fails_before_any_stage(self):
+        for prefix in ["../x", "/abs", "a\\b", "a/../b"]:
+            with self.subTest(prefix=prefix):
+                code, stage = self._dry_run(["--dataset-prefix", prefix])
+                self.assertEqual(code, 1)
+                stage.assert_not_called()
+
     def test_hidden_checkpoint_override_is_rejected(self):
         for extra in ("--ckpt old.pth", "-cold.pth", "--ck=old.pth", "--resume"):
             with self.subTest(extra=extra), patch.dict(os.environ, {"PIPELINE_TRAIN_ARGS": extra}), \

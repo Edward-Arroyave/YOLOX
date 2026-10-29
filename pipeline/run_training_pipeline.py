@@ -76,6 +76,16 @@ def normalize_model_prefix(prefix: str) -> str:
     return normalized
 
 
+def normalize_dataset_prefix(prefix: str) -> str:
+    """--dataset-prefix: a relative Blob path ("" = container root); never absolute, with '..' or '\'."""
+    if prefix == "":
+        return ""
+    parts = prefix.split("/")
+    if "\\" in prefix or prefix.startswith("/") or any(not part or part in (".", "..") for part in parts):
+        raise ValueError("--dataset-prefix debe ser una ruta relativa dentro del contenedor, sin '..'")
+    return prefix
+
+
 def experiment_path(configured: str) -> Path:
     return resolve_repo_path(configured)
 
@@ -228,6 +238,14 @@ def make_parser() -> argparse.ArgumentParser:
             "en PIPELINE_TIMEZONE."
         ),
     )
+    parser.add_argument(
+        "--dataset-prefix",
+        default=None,
+        help=(
+            "Ruta remota anterior al lote dentro de AZURE_STORAGE_CONTAINER; "
+            "reemplaza PIPELINE_BLOB_BASE_PREFIX. Vacío = raíz del contenedor."
+        ),
+    )
     parser.add_argument("--env-file", default=None, help="Archivo .env alternativo.")
     parser.add_argument(
         "--base-checkpoint", default=None,
@@ -293,7 +311,11 @@ def main() -> int:
         )
         if not dataset_folder or "/" in dataset_folder or "\\" in dataset_folder:
             raise ValueError("--dataset-folder debe ser el nombre de un lote, no una ruta")
-        blob_base_prefix = required_env("PIPELINE_BLOB_BASE_PREFIX")
+        blob_base_prefix = (
+            normalize_dataset_prefix(args.dataset_prefix)
+            if args.dataset_prefix is not None
+            else required_env("PIPELINE_BLOB_BASE_PREFIX")
+        )
         weights_prefix = normalize_weights_prefix(required_env("PIPELINE_WEIGHTS_PREFIX"))
         exp_file = experiment_path(
             os.getenv("PIPELINE_EXP_FILE", "exps/cassette/cassette_yolox.py")
@@ -441,7 +463,7 @@ def main() -> int:
         print(f"  Modelo base: {base_description}")
         print(f"  Última versión en {weights_prefix}/: {latest_version or 'ninguna'}")
         print(f"  Nueva versión: {target_version}")
-        print(f"  Dataset: {container}/{blob_base_prefix}/{dataset_folder}/")
+        print(f"  Dataset: {container}/{combine_prefix(blob_base_prefix, dataset_folder)}/")
         print(f"  Dataset local: {data_dir}")
         print(f"  Publicación: {container}/{weights_prefix}/{target_version}/")
 

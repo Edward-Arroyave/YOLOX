@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import re
 import subprocess
@@ -78,6 +79,40 @@ def find_next_version(blob_names: list[str], prefix: str) -> str:
             versions.append(tuple(int(part) for part in match.groups()))
     latest = format_version(max(versions)) if versions else None
     return next_patch_version(latest)
+
+
+def class_names_from_metrics(metrics_path: Path) -> list:
+    """Class names in model index order: the dataset's categories sorted by id, as COCODataset does."""
+    try:
+        classes = json.loads(metrics_path.read_text(encoding="utf-8")).get("dataset", {}).get("classes", {})
+    except (OSError, ValueError, AttributeError):
+        return []
+    if not isinstance(classes, dict):
+        return []
+    named = [(int(key), name) for key, name in classes.items() if str(key).isdigit() and isinstance(name, str) and name.strip()]
+    return [name for _, name in sorted(named)]
+
+
+def _varint(value: int) -> bytes:
+    out = bytearray()
+    while True:
+        byte = value & 0x7F
+        value >>= 7
+        out.append(byte | (0x80 if value else 0))
+        if not value:
+            return bytes(out)
+
+
+def embed_class_names(onnx_file: Path, names: list) -> None:
+    """Vision Label Studio spec 035 r3: the ONNX carries its class names in
+    metadata_props["names"] (JSON list, model index order). Appending a
+    repeated field to a serialized protobuf message adds it, so this needs no
+    onnx package."""
+    value = json.dumps(names, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    key = b"names"
+    entry = b"\x0a" + _varint(len(key)) + key + b"\x12" + _varint(len(value)) + value
+    with onnx_file.open("ab") as stream:
+        stream.write(b"\x72" + _varint(len(entry)) + entry)  # ModelProto field 14, length-delimited
 
 
 def upload_file(container_client, source: Path, blob_name: str) -> None:
@@ -261,6 +296,10 @@ def main() -> int:
             )
             if not onnx_file.is_file() or onnx_file.stat().st_size == 0:
                 raise RuntimeError("La exportación no generó un archivo ONNX válido")
+            names = class_names_from_metrics(Path(args.report_dir) / "metrics.json")
+            if names:
+                embed_class_names(onnx_file, names)
+                print(f"Clases en el ONNX: {', '.join(names)}")
 
             print("Subiendo pesos e informe a Azure...")
             uploaded = []

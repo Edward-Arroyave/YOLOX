@@ -155,6 +155,7 @@ python pipeline/run_training_pipeline.py \
 ```text
 --prefix NOMBRE        prefijo del modelo, por ejemplo vet o lis
 --dataset-folder LOTE  lote mensual histórico; por defecto usa el mes actual
+--dataset-prefix RUTA  carpeta remota anterior al lote; reemplaza PIPELINE_BLOB_BASE_PREFIX
 --version X.Y.Z        validación manual opcional de la versión calculada
 --yes-clean            autoriza limpiar imágenes antes y después del flujo
 --skip-clean           conserva los datasets locales
