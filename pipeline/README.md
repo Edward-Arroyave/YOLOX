@@ -141,6 +141,26 @@ contenedor); es lo que envía Vision Label Studio. Su ruta local se deriva de
 El batch del entrenamiento no es una variable de entorno. Se define una sola
 vez mediante `TRAIN_BATCH_SIZE` en `exps/cassette/settings.py` y actualmente
 vale `8`.
+
+### Opciones de entrenamiento desde Vision Label Studio
+
+`--training-options '<json>'` recibe las opciones que el usuario cambió en la
+app (spec 039 de Vision Label Studio). El catálogo cerrado (claves, tipos,
+rangos y valores por defecto) está en `pipeline/training_options.py`. Los
+valores por defecto son los del experimento de cassettes y `TRAIN_BATCH_SIZE`:
+sin la opción, el entrenamiento no cambia.
+
+- `batchSize` y `fp16` se aplican a entrenamiento, evaluación de test y
+  publicación.
+- El resto se añade como pares `clave valor` al final de `tools/train.py`
+  (después de `PIPELINE_TRAIN_ARGS`, así manda la interfaz). Por ejemplo,
+  `{"epochs":80,"learningRate":0.003}` añade `max_epoch 80 basic_lr_per_img 4.6875e-05`.
+- Una clave desconocida, un tipo o un rango inválido detienen el pipeline
+  antes de cualquier etapa.
+
+Si se cambia un valor por defecto del experimento, hay que cambiarlo también
+en el catálogo (lo comprueba `tests/utils/test_training_options.py`) y en la
+app (`backend/src/training/training-options.ts`).
 # Ficha técnica automática
 
 El informe ahora es un HTML autónomo: `model_report.html`, con curvas vectoriales

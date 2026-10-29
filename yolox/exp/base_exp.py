@@ -82,6 +82,13 @@ class BaseExp(metaclass=ABCMeta):
                         src_item_type = type(src_value[0])
                         v = [src_item_type(t) for t in v]
 
+                # bool("false") is True: parse booleans explicitly (VLS spec 039).
+                if isinstance(src_value, bool) and isinstance(v, str):
+                    text = v.strip().lower()
+                    if text not in ("true", "false", "1", "0"):
+                        raise ValueError(f"{k} must be true or false, got {v!r}")
+                    v = text in ("true", "1")
+
                 if src_value is not None and src_type != type(v):
                     try:
                         v = src_type(v)

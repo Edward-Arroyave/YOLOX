@@ -12,13 +12,18 @@ desde la raíz de este repositorio:
 
 ```
 conda run -n ia-yolox-training python pipeline/run_training_pipeline.py \
-  --prefix lis --dataset-folder <carpeta> [--dataset-prefix <prefijo>] --yes-clean   [--base-checkpoint <archivo local>]
+  --prefix lis --dataset-folder <carpeta> [--dataset-prefix <prefijo>] --yes-clean \n  [--base-checkpoint <archivo local>] [--training-options '<json>']
 ```
 
 `--dataset-prefix` es el campo `datasetPrefix` de la solicitud: la ruta en Blob
 entre el contenedor y la carpeta del dataset elegido en la app (`""` = raíz del
 contenedor). Las solicitudes sin ese campo no lo envían, y el pipeline usa
 `PIPELINE_BLOB_BASE_PREFIX`.
+
+`--training-options` es el campo `trainingOptions` de la solicitud: solo las
+opciones que el usuario cambió en la app. El agente lo valida con el catálogo
+de `pipeline/training_options.py`; si no es válido, la solicitud queda
+`failed` con el motivo. Sin el campo (o vacío) no se envía.
 
 ## Qué hace
 

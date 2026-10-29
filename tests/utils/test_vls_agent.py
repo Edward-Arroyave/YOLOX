@@ -171,6 +171,25 @@ class DatasetPrefixTest(AgentTestCase):
                     agent.build_command({**self.request, "datasetPrefix": prefix}, self.config)
 
 
+class TrainingOptionsTest(AgentTestCase):
+    """VLS spec 039 (CA-039-10): options chosen in the app, validated and passed as one argument."""
+
+    def test_options_become_one_json_argument(self):
+        argv, _ = agent.build_command({**self.request, "trainingOptions": {"epochs": 80, "ema": False}}, self.config)
+        self.assertEqual(argv[-2:], ["--training-options", '{"epochs":80,"ema":false}'])
+
+    def test_absent_or_empty_options_keep_the_defaults(self):
+        for request in (self.request, {**self.request, "trainingOptions": None}, {**self.request, "trainingOptions": {}}):
+            argv, _ = agent.build_command(request, self.config)
+            self.assertNotIn("--training-options", argv)
+
+    def test_rejects_invalid_options(self):
+        for value in [{"epochs": "50; rm -rf /"}, {"foo": 1}, {"epochs": 0}, [], "epochs=50"]:
+            with self.subTest(value=value):
+                with self.assertRaises(agent.InvalidRequest):
+                    agent.build_command({**self.request, "trainingOptions": value}, self.config)
+
+
 class ProcessRunTest(AgentTestCase):
     def test_success_runs_once_publishes_log_progress_and_result(self):
         self.queue()

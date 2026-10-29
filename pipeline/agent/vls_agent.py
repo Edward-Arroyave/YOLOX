@@ -9,7 +9,7 @@ and starts the machine if it is off. This agent runs as a systemd service of the
 * waits, with status ``waiting``, while someone else's training runs on the machine;
 * downloads the chosen base model from Blob and passes it as ``--base-checkpoint``;
 * runs ``conda run -n <env> python pipeline/run_training_pipeline.py --prefix … --dataset-folder …
-  [--dataset-prefix …] --yes-clean``;
+  [--dataset-prefix …] --yes-clean [--training-options <json>]``;
 * uploads the last 200 log lines and ``progress.json`` (written by the trainer through
   ``VLS_PROGRESS_FILE``) every ``VLS_LOG_UPLOAD_SECONDS``;
 * writes the final ``status.json`` with the published version, duration and best metrics;
@@ -35,6 +35,8 @@ from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
+
+from pipeline import training_options
 
 NAME = re.compile(r"^[A-Za-z0-9._-]+$")
 RUN_ID = re.compile(r"^\d{8}-\d{6}-[0-9a-f]{4}$")
@@ -105,6 +107,13 @@ def build_command(request, config: AgentConfig, base_checkpoint_path: Path | Non
         _relative(dataset_prefix, "datasetPrefix")
     elif dataset_prefix is not None and not isinstance(dataset_prefix, str):
         raise InvalidRequest("datasetPrefix no válido")
+    # VLS spec 039 (RF-039-10): only the options that differ from the defaults; absent or {} = defaults.
+    options = request.get("trainingOptions")
+    if options is not None:
+        try:
+            options = training_options.validate(options)
+        except ValueError as error:
+            raise InvalidRequest(f"trainingOptions no válido: {error}") from None
     workdir = request.get("workdir")
     if not isinstance(workdir, str) or ".." in PurePosixPath(workdir).parts:
         raise InvalidRequest("workdir no válido")
@@ -120,6 +129,8 @@ def build_command(request, config: AgentConfig, base_checkpoint_path: Path | Non
     ]
     if base_checkpoint_path is not None:
         argv += ["--base-checkpoint", str(base_checkpoint_path)]
+    if options:
+        argv += ["--training-options", json.dumps(options, separators=(",", ":"))]
     return argv, str(config.repository_root)
 
 

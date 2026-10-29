@@ -148,6 +148,40 @@ class TestTrainingPipeline(unittest.TestCase):
                 self.assertEqual(code, 1)
                 stage.assert_not_called()
 
+    def _stage_command(self, stage, prefix):
+        return next(c.args[1] for c in stage.call_args_list if c.args[0].startswith(prefix))
+
+    def test_training_options_reach_train_test_and_publish(self):
+        # VLS spec 039 (CA-039-11).
+        chosen = '{"epochs":80,"batchSize":4,"fp16":false,"learningRate":0.003,"ema":false,"mosaicScaleMin":0.8}'
+        code, stage = self._dry_run(["--training-options", chosen])
+        self.assertEqual(code, 0)
+        train = self._stage_command(stage, "4/6")
+        self.assertEqual(train[train.index("--batch-size") + 1], "4")
+        self.assertNotIn("--fp16", train)
+        self.assertEqual(train[-8:], ["max_epoch", "80", "basic_lr_per_img", "4.6875e-05", "ema", "false",
+                                      "mosaic_scale", "0.8,1.1"])
+        for prefix in ("Evaluar", "5/6"):
+            command = self._stage_command(stage, prefix)
+            self.assertEqual(command[command.index("--batch-size") + 1], "4")
+            self.assertNotIn("--fp16", command)
+
+    def test_without_training_options_the_commands_are_unchanged(self):
+        code, stage = self._dry_run([])
+        self.assertEqual(code, 0)
+        train = self._stage_command(stage, "4/6")
+        self.assertEqual(train[train.index("--batch-size") + 1], "8")
+        self.assertIn("--fp16", train)
+        self.assertEqual(train[-2], "output_dir")
+
+    def test_invalid_training_options_fail_before_any_stage(self):
+        # CA-039-12.
+        for value in ['{"epochs":0}', '{"foo":1}', "no-json", "[]"]:
+            with self.subTest(value=value):
+                code, stage = self._dry_run(["--training-options", value])
+                self.assertEqual(code, 1)
+                stage.assert_not_called()
+
     def test_hidden_checkpoint_override_is_rejected(self):
         for extra in ("--ckpt old.pth", "-cold.pth", "--ck=old.pth", "--resume"):
             with self.subTest(extra=extra), patch.dict(os.environ, {"PIPELINE_TRAIN_ARGS": extra}), \

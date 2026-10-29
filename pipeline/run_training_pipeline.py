@@ -24,6 +24,7 @@ if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
 from exps.cassette.settings import TRAIN_BATCH_SIZE  # noqa: E402
+from pipeline import training_options  # noqa: E402
 from tools.ingest_blob_storage import (  # noqa: E402
     combine_prefix,
     create_container_client,
@@ -246,6 +247,14 @@ def make_parser() -> argparse.ArgumentParser:
             "reemplaza PIPELINE_BLOB_BASE_PREFIX. Vacío = raíz del contenedor."
         ),
     )
+    parser.add_argument(
+        "--training-options",
+        default=None,
+        help=(
+            "JSON con las opciones de entrenamiento elegidas en Vision Label Studio "
+            "(pipeline/training_options.py). Solo las que difieren del valor por defecto."
+        ),
+    )
     parser.add_argument("--env-file", default=None, help="Archivo .env alternativo.")
     parser.add_argument(
         "--base-checkpoint", default=None,
@@ -330,8 +339,13 @@ def main() -> int:
             os.getenv("PIPELINE_ARTIFACTS_DIR", ".pipeline_artifacts")
         ) / project
         devices = int(os.getenv("PIPELINE_DEVICES", "1"))
-        batch_size = TRAIN_BATCH_SIZE
-        fp16 = env_bool("PIPELINE_FP16", True)
+        # VLS spec 039 (RF-039-11): validated again here; the UI values win over the defaults.
+        chosen_options = (
+            training_options.validate(json.loads(args.training_options))
+            if args.training_options is not None else {}
+        )
+        batch_size = chosen_options.get("batchSize", TRAIN_BATCH_SIZE)
+        fp16 = chosen_options.get("fp16", env_bool("PIPELINE_FP16", True))
         no_onnx_simplify = env_bool("PIPELINE_ONNX_NO_SIMPLIFY", False)
         if devices < 1 or batch_size < 1:
             raise ValueError("PIPELINE_DEVICES y TRAIN_BATCH_SIZE deben ser mayores que cero")
@@ -424,6 +438,7 @@ def main() -> int:
         if extra_train_args:
             train_command.extend(extra_train_args)
         train_command.extend(["output_dir", str(output_dir)])
+        train_command.extend(training_options.exp_overrides(chosen_options))
 
         publish_command = [
             sys.executable,
@@ -463,6 +478,7 @@ def main() -> int:
         print(f"  Modelo base: {base_description}")
         print(f"  Última versión en {weights_prefix}/: {latest_version or 'ninguna'}")
         print(f"  Nueva versión: {target_version}")
+        print(f"  Configuración: {training_options.describe(chosen_options)}")
         print(f"  Dataset: {container}/{combine_prefix(blob_base_prefix, dataset_folder)}/")
         print(f"  Dataset local: {data_dir}")
         print(f"  Publicación: {container}/{weights_prefix}/{target_version}/")
