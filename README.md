@@ -180,7 +180,7 @@ Los dos prefijos utilizan el mismo bloque de variables:
 ```dotenv
 PIPELINE_BLOB_BASE_PREFIX=training_yolox
 PIPELINE_WEIGHTS_PREFIX=weights
-PIPELINE_EXP_FILE=exps/cassette/cassette_yolox.py
+PIPELINE_EXP_FILE=exps/general/yolox_general.py
 ```
 
 La estructura interna es fija para todos los proyectos:
@@ -215,7 +215,7 @@ Validación también se utiliza como conjunto de prueba mientras no exista un
 | `PIPELINE_TIMEZONE` | Zona horaria para calcular automáticamente el lote mensual. |
 | `PIPELINE_BLOB_BASE_PREFIX` | Ruta remota común anterior al lote seleccionado. |
 | `PIPELINE_WEIGHTS_PREFIX` | Ruta remota común de modelos versionados. |
-| `PIPELINE_EXP_FILE` | Experimento único de cassettes usado por `vet` y `lis`. |
+| `PIPELINE_EXP_FILE` | Experimento; por defecto el general (`exps/general/yolox_general.py`). |
 
 La configuración completa está en `.env.example`. La guía específica del
 orquestador está en `pipeline/README.md`.
@@ -224,13 +224,18 @@ orquestador está en `pipeline/README.md`.
 
 ### Configuración del dataset personalizado
 
-El experimento compartido `exps/cassette/cassette_yolox.py` se usa para LIS y
-VET. Permite configurar únicamente la raíz del dataset mediante
-`YOLOX_DATA_DIR`; los nombres internos permanecen fijos.
+El experimento general `exps/general/yolox_general.py` se usa para LIS, VET y
+otros proyectos (`exps/cassette/cassette_yolox.py` es un alias). Toma:
 
-El batch también pertenece a la configuración común. Se define como
-`TRAIN_BATCH_SIZE = 8` en `exps/cassette/settings.py` y no se configura mediante
-`.env`.
+- la raíz del dataset de `YOLOX_DATA_DIR` (los nombres internos son fijos);
+- el número de clases de `training/annotations/annotations.json` (sin ese
+  archivo usa 3, las de cassettes);
+- la configuración (tamaño del modelo y de entrada, épocas, lote, aprendizaje y
+  aumentos) del JSON de `YOLOX_TRAINING_CONFIG`, que escribe el pipeline. Sin
+  esa variable usa el perfil `exps/general/profiles/cassettes.json`.
+
+Para entrenar a mano con otra configuración, escribe un JSON con las opciones
+de `pipeline/training_options.py` y exporta su ruta en `YOLOX_TRAINING_CONFIG`.
 
 Crear el archivo `.env` a partir del ejemplo incluido:
 

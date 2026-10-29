@@ -179,7 +179,7 @@ def make_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ckpt", required=True, help="Ruta del mejor checkpoint .pth")
     parser.add_argument(
         "--exp-file",
-        default="exps/cassette/cassette_yolox.py",
+        default="exps/general/yolox_general.py",
         help="Archivo de experimento usado para exportar ONNX.",
     )
     parser.add_argument(

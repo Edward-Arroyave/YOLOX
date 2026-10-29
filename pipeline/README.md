@@ -130,37 +130,40 @@ Todos los perfiles deben conservar estos nombres; no son variables de `.env`:
 
 La configuración compartida usa `PIPELINE_BLOB_BASE_PREFIX`,
 `PIPELINE_WEIGHTS_PREFIX` y
-`PIPELINE_EXP_FILE=exps/cassette/cassette_yolox.py`. Tanto `--prefix lis` como
-`--prefix vet` cargan ese mismo experimento. El lote se recibe con
+`PIPELINE_EXP_FILE=exps/general/yolox_general.py` (por defecto). Tanto
+`--prefix lis` como `--prefix vet` cargan ese mismo experimento. El lote se recibe con
 `--dataset-folder` o se calcula con el mes actual. `--dataset-prefix <ruta>`
 reemplaza `PIPELINE_BLOB_BASE_PREFIX` para esa ejecución (vacío = raíz del
 contenedor); es lo que envía Vision Label Studio. Su ruta local se deriva de
 `AZURE_INGEST_DESTINATION`. La descripción de las variables está en
 `.env.example` y en el README principal.
 
-El batch del entrenamiento no es una variable de entorno. Se define una sola
-vez mediante `TRAIN_BATCH_SIZE` en `exps/cassette/settings.py` y actualmente
-vale `8`.
+El batch del entrenamiento no es una variable de entorno: es la opción
+`batchSize` (por defecto `8`, del perfil «cassettes»).
 
 ### Opciones de entrenamiento desde Vision Label Studio
 
 `--training-options '<json>'` recibe las opciones que el usuario cambió en la
-app (spec 039 de Vision Label Studio). El catálogo cerrado (claves, tipos,
-rangos y valores por defecto) está en `pipeline/training_options.py`. Los
-valores por defecto son los del experimento de cassettes y `TRAIN_BATCH_SIZE`:
-sin la opción, el entrenamiento no cambia.
+app (spec 039 de Vision Label Studio). El catálogo cerrado (claves, tipos y
+rangos) está en `pipeline/training_options.py`; los valores por defecto, en el
+perfil `exps/general/profiles/cassettes.json`. Sin la opción, el entrenamiento
+no cambia.
 
-- `batchSize` y `fp16` se aplican a entrenamiento, evaluación de test y
-  publicación.
-- El resto se añade como pares `clave valor` al final de `tools/train.py`
-  (después de `PIPELINE_TRAIN_ARGS`, así manda la interfaz). Por ejemplo,
-  `{"epochs":80,"learningRate":0.003}` añade `max_epoch 80 basic_lr_per_img 4.6875e-05`.
+- El pipeline escribe la configuración completa (valores por defecto + los
+  elegidos) en `<PIPELINE_ARTIFACTS_DIR>/<proyecto>/training-config.json` y pasa
+  su ruta en `YOLOX_TRAINING_CONFIG` a todas las etapas: entrenamiento, test y
+  exportación cargan el mismo Exp general.
+- `batchSize` y `fp16` también van como argumentos de esas etapas.
+- `PIPELINE_TRAIN_ARGS` se aplica después, así que gana sobre la interfaz.
+- Con modelo base, la etapa "Verificar modelo base"
+  (`tools/check_base_checkpoint.py`) se detiene si el checkpoint es de otro
+  tamaño de modelo (las capas de clases pueden cambiar).
 - Una clave desconocida, un tipo o un rango inválido detienen el pipeline
   antes de cualquier etapa.
 
-Si se cambia un valor por defecto del experimento, hay que cambiarlo también
-en el catálogo (lo comprueba `tests/utils/test_training_options.py`) y en la
-app (`backend/src/training/training-options.ts`).
+Si se cambia un valor del perfil «cassettes», hay que cambiarlo también en la
+app (`backend/src/training/training-options.ts`); lo comprueban
+`tests/utils/test_training_options.py` y las pruebas de la app.
 # Ficha técnica automática
 
 El informe ahora es un HTML autónomo: `model_report.html`, con curvas vectoriales

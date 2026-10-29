@@ -19,6 +19,7 @@ from pipeline.run_training_pipeline import (
     normalize_model_prefix,
     missing_runtime_dependencies,
     required_env,
+    write_training_config,
     main,
 )
 
@@ -151,20 +152,55 @@ class TestTrainingPipeline(unittest.TestCase):
     def _stage_command(self, stage, prefix):
         return next(c.args[1] for c in stage.call_args_list if c.args[0].startswith(prefix))
 
-    def test_training_options_reach_train_test_and_publish(self):
-        # VLS spec 039 (CA-039-11).
-        chosen = '{"epochs":80,"batchSize":4,"fp16":false,"learningRate":0.003,"ema":false,"mosaicScaleMin":0.8}'
+    def _stage_environment(self, stage, prefix):
+        call = next(c for c in stage.call_args_list if c.args[0].startswith(prefix))
+        return call.args[3] if len(call.args) > 3 else call.kwargs.get("environment")
+
+    def test_training_options_reach_every_stage_through_the_config_file(self):
+        # VLS spec 039 r2 (CA-039-19): train, test and export load the same general Exp configuration.
+        chosen = '{"epochs":80,"batchSize":4,"fp16":false,"learningRate":0.003,"ema":false,"modelSize":"m"}'
         code, stage = self._dry_run(["--training-options", chosen])
         self.assertEqual(code, 0)
         train = self._stage_command(stage, "4/6")
         self.assertEqual(train[train.index("--batch-size") + 1], "4")
         self.assertNotIn("--fp16", train)
-        self.assertEqual(train[-8:], ["max_epoch", "80", "basic_lr_per_img", "4.6875e-05", "ema", "false",
-                                      "mosaic_scale", "0.8,1.1"])
+        self.assertEqual(train[-2], "output_dir")  # no "key value" pairs any more
+        paths = set()
+        for prefix in ("Verificar", "4/6", "Evaluar", "5/6"):
+            environment = self._stage_environment(stage, prefix)
+            paths.add(environment["YOLOX_TRAINING_CONFIG"])
+        self.assertEqual(len(paths), 1)
+        self.assertTrue(paths.pop().replace("\\", "/").endswith("lis_yolox/training-config.json"))
         for prefix in ("Evaluar", "5/6"):
             command = self._stage_command(stage, prefix)
             self.assertEqual(command[command.index("--batch-size") + 1], "4")
             self.assertNotIn("--fp16", command)
+
+    def test_the_default_experiment_is_the_general_one(self):
+        # RF-039-21.
+        code, stage = self._dry_run([])
+        train = self._stage_command(stage, "4/6")
+        self.assertTrue(train[train.index("--exp_file") + 1].replace("\\", "/").endswith("exps/general/yolox_general.py"))
+
+    def test_the_base_checkpoint_is_checked_before_training(self):
+        # RF-039-22: after the dataset is downloaded (the Exp reads its classes), before training.
+        code, stage = self._dry_run([])
+        self.assertEqual(code, 0)
+        names = [c.args[0] for c in stage.call_args_list]
+        check = self._stage_command(stage, "Verificar")
+        self.assertEqual(check[1], "tools/check_base_checkpoint.py")
+        self.assertIn("--ckpt", check)
+        self.assertLess(names.index(next(n for n in names if n.startswith("3/6"))), names.index("Verificar modelo base"))
+        self.assertLess(names.index("Verificar modelo base"), names.index(next(n for n in names if n.startswith("4/6"))))
+
+    def test_write_training_config(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "lis_yolox" / "training-config.json"
+            write_training_config(path, {"epochs": 80})
+            written = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(written["epochs"], 80)
+        self.assertEqual(written["modelSize"], "s")
+        self.assertEqual(len(written), 21)
 
     def test_without_training_options_the_commands_are_unchanged(self):
         code, stage = self._dry_run([])

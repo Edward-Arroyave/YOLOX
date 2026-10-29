@@ -23,7 +23,6 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
-from exps.cassette.settings import TRAIN_BATCH_SIZE  # noqa: E402
 from pipeline import training_options  # noqa: E402
 from tools.ingest_blob_storage import (  # noqa: E402
     combine_prefix,
@@ -202,6 +201,12 @@ def download_base_checkpoint(
             temporary.unlink()
 
 
+def write_training_config(path: Path, options: dict) -> None:
+    """VLS spec 039 r2: every option (defaults + chosen) for the general Exp, read through YOLOX_TRAINING_CONFIG."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(training_options.effective(options), indent=2), encoding="utf-8")
+
+
 def clean_local_weights(output_project: Path, artifacts_project: Path) -> int:
     deleted = 0
     if output_project.is_dir():
@@ -327,7 +332,7 @@ def main() -> int:
         )
         weights_prefix = normalize_weights_prefix(required_env("PIPELINE_WEIGHTS_PREFIX"))
         exp_file = experiment_path(
-            os.getenv("PIPELINE_EXP_FILE", "exps/cassette/cassette_yolox.py")
+            os.getenv("PIPELINE_EXP_FILE", "exps/general/yolox_general.py")
         )
         data_dir = resolve_repo_path(
             os.getenv("AZURE_INGEST_DESTINATION", "datasets")
@@ -339,16 +344,19 @@ def main() -> int:
             os.getenv("PIPELINE_ARTIFACTS_DIR", ".pipeline_artifacts")
         ) / project
         devices = int(os.getenv("PIPELINE_DEVICES", "1"))
-        # VLS spec 039 (RF-039-11): validated again here; the UI values win over the defaults.
+        # VLS spec 039: validated again here. r2: the general Exp reads them from training_config
+        # (YOLOX_TRAINING_CONFIG), so training, test and export load the same model.
         chosen_options = (
             training_options.validate(json.loads(args.training_options))
             if args.training_options is not None else {}
         )
-        batch_size = chosen_options.get("batchSize", TRAIN_BATCH_SIZE)
+        training_config = training_options.effective(chosen_options)
+        training_config_file = artifacts_project / "training-config.json"
+        batch_size = training_config["batchSize"]
         fp16 = chosen_options.get("fp16", env_bool("PIPELINE_FP16", True))
         no_onnx_simplify = env_bool("PIPELINE_ONNX_NO_SIMPLIFY", False)
         if devices < 1 or batch_size < 1:
-            raise ValueError("PIPELINE_DEVICES y TRAIN_BATCH_SIZE deben ser mayores que cero")
+            raise ValueError("PIPELINE_DEVICES y batchSize deben ser mayores que cero")
         if not exp_file.is_file():
             raise ValueError(f"No existe el experimento configurado: {exp_file}")
         if not args.dry_run:
@@ -406,6 +414,7 @@ def main() -> int:
         child_environment["YOLOX_DATASET_VERSION"] = dataset_folder
         child_environment.pop("YOLOX_BASE_METRICS", None)
         child_environment["YOLOX_DATA_DIR"] = str(data_dir)
+        child_environment["YOLOX_TRAINING_CONFIG"] = str(training_config_file)
         add_repository_to_pythonpath(child_environment)
         env_args = ["--env-file", str(loaded)] if loaded else []
 
@@ -438,7 +447,6 @@ def main() -> int:
         if extra_train_args:
             train_command.extend(extra_train_args)
         train_command.extend(["output_dir", str(output_dir)])
-        train_command.extend(training_options.exp_overrides(chosen_options))
 
         publish_command = [
             sys.executable,
@@ -479,6 +487,8 @@ def main() -> int:
         print(f"  Última versión en {weights_prefix}/: {latest_version or 'ninguna'}")
         print(f"  Nueva versión: {target_version}")
         print(f"  Configuración: {training_options.describe(chosen_options)}")
+        print(f"  Modelo: YOLOX-{training_config['modelSize']}, entrada {training_config['inputSize']}")
+        print(f"  Experimento: {exp_file}")
         print(f"  Dataset: {container}/{combine_prefix(blob_base_prefix, dataset_folder)}/")
         print(f"  Dataset local: {data_dir}")
         print(f"  Publicación: {container}/{weights_prefix}/{target_version}/")
@@ -503,6 +513,13 @@ def main() -> int:
         else:
             print("\n=== 2/6 Limpieza inicial omitida ===", flush=True)
         run_stage("3/6 Descargar imágenes", ingest_command, args.dry_run, child_environment)
+        if not args.dry_run:
+            write_training_config(training_config_file, chosen_options)
+        if base_checkpoint:
+            # VLS spec 039 r2 (RF-039-22): YOLOX would silently skip layers of another model size.
+            check_command = [sys.executable, "tools/check_base_checkpoint.py",
+                             "--exp-file", str(exp_file), "--ckpt", str(base_checkpoint)]
+            run_stage("Verificar modelo base", check_command, args.dry_run, child_environment)
 
         previous_mtime = checkpoint.stat().st_mtime_ns if checkpoint.exists() else None
         training_started = time.time_ns()

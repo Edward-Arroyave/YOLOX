@@ -1,0 +1,27 @@
+{
+  "name": "Cassettes",
+  "description": "Configuración del experimento de cassettes (regiones Control y Test). Valores por defecto del Exp general y de Vision Label Studio.",
+  "options": {
+    "epochs": 120,
+    "batchSize": 8,
+    "learningRate": 0.0015,
+    "noAugEpochs": 60,
+    "modelSize": "s",
+    "inputSize": 640,
+    "warmupEpochs": 5,
+    "minLrRatio": 0.1,
+    "weightDecay": 0.0005,
+    "momentum": 0.9,
+    "ema": true,
+    "evalInterval": 5,
+    "fp16": true,
+    "mosaicProb": 0.25,
+    "mosaicScaleMin": 0.9,
+    "mosaicScaleMax": 1.1,
+    "degrees": 1.0,
+    "translate": 0.02,
+    "shear": 0.0,
+    "flipProb": 0.0,
+    "mixupProb": 0.0
+  }
+}
